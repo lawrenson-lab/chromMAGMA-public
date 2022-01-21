@@ -18,7 +18,7 @@ Intermediate files should be saved to:
 ```
 /Analysis/Data
 ```
-This part is also available as a step-by-step github pages at https://lawrenson-lab.github.io/chromMAGMA_private/.
+This part is also available as a step-by-step github pages at https://lawrenson-lab.github.io/chromMAGMA-public.
 
 ## Libraries
 The following are the libraries used in /Analysis.
