@@ -47,7 +47,7 @@ cut -f1-4 Processing/Data/munged_genehancer_enhancer_list.txt | sort | uniq > Pr
 
 # This subsets the enhancer peaks by those which are active within H3K27ac Mullerian ovarian cancer and fallopian tube samples
 awk '{printf "chr%s\t%s\t%s\n", $2, $3, $4}' Processing/Data/genehancer.enhancer.loc | \
-	bedtools intersect -a - -b Processing/Data/ivetth_peak_regions.hg19.bed | \
+	bedtools intersect -a - -b Processing/Data/active_enhancer_peak_regions.hg19.bed | \
 	sort | \
 	uniq | \
 	sed 's/chr//g' | \
