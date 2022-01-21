@@ -52,7 +52,7 @@ Map to the Analysis directory. Corresponding Rmarkdowns and the Utility Source C
 ```
 cd /path-to-your-folder/chromMAGMA/Analysis
 ```
-This part is also available as a step-by-step github pages at https://lawrenson-lab.github.io/chromMAGMA_public
+This part is also available as a step-by-step github pages at https://lawrenson-lab.github.io/chromMAGMA-public
 .
 
 
