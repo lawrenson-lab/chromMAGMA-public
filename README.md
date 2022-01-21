@@ -11,7 +11,7 @@ This is a step-by-step tutorial on how to conduct chromMAGMA, a bioinformatic pi
 
 There are two key parts to this tutorial. 
 
-The first part includes running MAGMA with modified .annot files that assign SNPs to regulatory elements. In this case, we will use .annot files of EOC GWAS statistics from CITE MAIN PAPER assigned to genomic regions consisting of a union set of primary EOC  H3K27ac ChIP-seq data from Corona et al. 2020. The regulatory elements are then assigned back to genes using the Genehancer (Fishilevich et al., 2017) database in a Rscript. 
+The first part includes running MAGMA with modified .annot files that assign SNPs to regulatory elements. In this case, we will use .annot files of EOC GWAS statistics from Coetzee, et al. 2021 ,'Integrative multi-omics analyses to identify the genetic and functional mechanisms underlying ovarian cancer risk regions' (under review) assigned to genomic regions consisting of a union set of primary EOC  H3K27ac ChIP-seq data from Corona et al. 2020. The regulatory elements are then assigned back to genes using the Genehancer (Fishilevich et al., 2017) database in a Rscript. 
 
 The second part includes the process of cleaning outputs and assigning the most significant regulatory element to a gene. This part of the tutorial will then delve into various annotations, descriptive statistics, and analysis to explore the gene-level outputs from chromMAGMA. This part is conveniently available as GitHub Pages https://lawrenson-lab.github.io/chromMAGMA-public
 
