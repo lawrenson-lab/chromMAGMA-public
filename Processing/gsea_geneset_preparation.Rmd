@@ -56,7 +56,7 @@ read_tsv("Analysis/Data/SuperEnhancer_TFs.txt") %>%
   # This condenses the 
   mutate(output = map(output, reduce, paste, sep = "\t")) %>%
   .$output %>%
-  lapply(write, "Analysis/Data/robbin_superenancer.gmt", append = TRUE, sep = "\n")
+  lapply(write, "Analysis/Data/superenancer.gmt", append = TRUE, sep = "\n")
 
 ```
 
