@@ -1,0 +1,109 @@
+---
+title: "01 Curating chromMAGMA and MAGMA Gene Identifiers"
+output: html_document
+---
+*Robbin Nameki, Anamay Shetty et al.*
+*August 2021*
+
+# Introduction
+The following workflow describes the process of curating chromMAGMA and MAGMA outputs to the gene identifiers EnsemblgeneIDs available from biomaRt
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls())
+```
+## Libraries
+```{r, eval = TRUE, message= FALSE, warning=FALSE}
+library(biomaRt)
+library(knitr)
+```
+
+## Sourcecode
+```{r,eval = TRUE, message= FALSE, warning=FALSE}
+source('Rscripts/Utils.R')
+```
+
+## Curating chromMAGMA and MAGMA gene identifiers 
+Gene identifiers ID'd as 'ensembl_gene_id', 'external_gene_name','external_synonym','hgnc_symbol', 'entrez_gene_id', and 'uniprot_gn_symbol' from BiomaRt are converted to EnsemblGeneIDs. The gene list is also limited here to protein coding genes. 
+```{r,eval = TRUE, warning=FALSE}
+#Cleaning chromMAGMA Outputs. 
+
+.ensembl <- useEnsembl_GRCh37()
+
+x <- read_final_gene_results()
+
+#x$GENE[x$FEATURE == 'snp_to_genes'] <- x$originalfeature[x$FEATURE == 'snp_to_genes']
+
+genes <- unique(sort(x$GENE))
+
+### ensembl_gene_id
+i <- startsWith(x = genes, prefix = 'ENSG') & nchar(genes) == 15
+df.1 <- data.frame(GENE = genes[i], ensembl_gene_id = genes[i])
+genes <- genes[!i]
+
+### external_gene_name
+bm <- getBM(attributes = c('ensembl_gene_id', 'external_gene_name', 'gene_biotype'), mart = .ensembl, filters = 'chromosome_name', values = c(1:22,'X')); bm <- bm[bm$gene_biotype == 'protein_coding',]
+bm <- bm[!is.na(bm$external_gene_name),]
+ensembl_gene_id <- lapply(genes, function(g){
+  return(bm$ensembl_gene_id[bm$external_gene_name == g])
+})
+i <- lapply(ensembl_gene_id, length) == 1
+df.2 <- data.frame(GENE = genes[i], ensembl_gene_id = unlist(ensembl_gene_id[i]))
+genes <- genes[!i]
+
+### external_synonym
+bm <- getBM(attributes = c('ensembl_gene_id', 'external_synonym', 'gene_biotype'), mart = .ensembl, filters = 'chromosome_name', values = c(1:22,'X')); bm <- bm[bm$gene_biotype == 'protein_coding',]
+bm <- bm[!is.na(bm$external_synonym),]
+ensembl_gene_id <- lapply(genes, function(g){
+  return(bm$ensembl_gene_id[bm$external_synonym == g])
+})
+i <- lapply(ensembl_gene_id, length) == 1
+df.3 <- data.frame(GENE = genes[i], ensembl_gene_id = unlist(ensembl_gene_id[i]))
+genes <- genes[!i]
+
+### hgnc_symbol
+bm <- getBM(attributes = c('ensembl_gene_id', 'hgnc_symbol', 'gene_biotype'), mart = .ensembl, filters = 'chromosome_name', values = c(1:22,'X')); bm <- bm[bm$gene_biotype == 'protein_coding',]
+bm <- bm[!is.na(bm$hgnc_symbol),]
+ensembl_gene_id <- lapply(genes, function(g){
+  return(bm$ensembl_gene_id[bm$hgnc_symbol == g])
+})
+i <- lapply(ensembl_gene_id, length) == 1
+df.4 <- data.frame(GENE = genes[i], ensembl_gene_id = unlist(ensembl_gene_id[i]))
+genes <- genes[!i]
+
+### entrezgene_id
+bm <- getBM(attributes = c('ensembl_gene_id', 'entrezgene_id', 'gene_biotype'), mart = .ensembl, filters = 'chromosome_name', values = c(1:22,'X')); bm <- bm[bm$gene_biotype == 'protein_coding',]
+bm <- bm[!is.na(bm$entrezgene_id),]
+ensembl_gene_id <- lapply(genes, function(g){
+  return(bm$ensembl_gene_id[paste0('LOC',bm$entrezgene_id) == g])
+})
+i <- lapply(ensembl_gene_id, length) == 1
+df.5 <- data.frame(GENE = genes[i], ensembl_gene_id = unlist(ensembl_gene_id[i]))
+genes <- genes[!i]
+
+### uniprot_gn_symbol
+bm <- getBM(attributes = c('ensembl_gene_id', 'uniprot_gn_symbol', 'gene_biotype'), mart = .ensembl, filters = 'chromosome_name', values = c(1:22,'X')); bm <- bm[bm$gene_biotype == 'protein_coding',]
+bm <- bm[!is.na(bm$uniprot_gn_symbol),]
+ensembl_gene_id <- lapply(genes, function(g){
+  return(bm$ensembl_gene_id[bm$uniprot_gn_symbol == g])
+})
+i <- lapply(ensembl_gene_id, length) == 1
+df.6 <- data.frame(GENE = genes[i], ensembl_gene_id = unlist(ensembl_gene_id[i]))
+genes <- genes[!i]
+
+df <- rbind(df.1, df.2, df.3, df.4, df.5, df.6)
+x <- merge(x = x, y = df, by = 'GENE', all.x = T)
+
+bm <- getBM(attributes = c('ensembl_gene_id', 'external_gene_name', 'gene_biotype','chromosome_name','start_position','end_position'), mart = .ensembl, filters = 'chromosome_name', values = c(1:22,'X')); bm <- bm[bm$gene_biotype == 'protein_coding',]
+x <- merge(x = x, y = bm, by = 'ensembl_gene_id', all.x = T)
+
+str(x)
+```
+
+## Saving gene-level results with EnsemblGeneIds 
+This RDS file will be used in further analysis
+```{r,eval = TRUE}
+#Output with cleaned names
+#saveRDS(x = x, file = 'Data/final_gene_results_v1.08_wEnsemblGeneId.4.2.21.rds')
+```
+

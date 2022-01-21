@@ -1,0 +1,528 @@
+---
+title: "04 General Descriptive Statistics of chromMAGMA"
+output:
+  html_document:
+    df_print: paged
+---
+
+*Robbin Nameki, Anamay Shetty et al.*
+*August 2021*
+
+# Introduction
+The following code chunks are for gathering descriptive data to compare the results of MAGMA and chromMAGMA. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls())
+```
+## Libraries
+```{r,message = FALSE, warning = FALSE}
+library(tidyverse)
+library(valr)
+library(reshape2)
+library(ggridges)
+library(RColorBrewer)
+library(biomaRt)
+library(ggpubr)
+library(UpSetR)
+```
+## Sourcecode
+```{r,eval = TRUE, warning = FALSE}
+source('Rscripts/Utils.R')
+```
+## Data
+```{r,eval =TRUE, warning = FALSE}
+gene_file <- read_gene_level()
+wBin <- read_wBin()
+PosGenes <- read_PosGenes() 
+```
+
+## Data frames 
+of significant genes for each FEATURExGWAS_TYPE for chromMAGMA and MAGMA
+```{r, eval = TRUE, warning = FALSE}
+
+histotype = c('HGSOC','LGSOC','CCOC','NMOC','MOC','EnOC')
+for(i in histotype) {
+  #MAGMA for each histotype
+  assign(paste0('MAGMA_sig_',i),
+         gene_file %>%
+           filter(FEATURE == 'MAGMA') %>%
+           filter(GWAS_TYPE == paste(i)) %>%
+  group_by(FEATURE, GWAS_TYPE) %>%
+  filter(P < 0.05 / n())
+         ) 
+  #chromMAGMA for each histotype
+  assign(paste0('chromMAGMA_sig_',i),
+         gene_file %>%
+           filter(FEATURE == 'chromMAGMA') %>%
+           filter(GWAS_TYPE == paste(i))%>%
+  group_by(FEATURE, GWAS_TYPE) %>%
+  filter(P < 0.05 / n())
+         )
+}
+```
+
+
+```{r,include = FALSE, message = FALSE}
+# of enhancers
+unique_enhancers <- gene_file %>%
+  filter(FEATURE == 'chromMAGMA') %>%
+  group_by(GWAS_TYPE) %>%
+  distinct(originalfeature)%>%
+  tally()   %>% 
+  ungroup() %>%
+  dplyr::summarise(mean = mean(n), sd = sd(n))
+
+# of significant enhancers
+unique_significant_enhancers <- gene_file %>%
+  filter(FEATURE == 'chromMAGMA') %>%
+  group_by(GWAS_TYPE) %>%
+  filter(P < 0.05 / n()) %>%
+  group_by(GWAS_TYPE) %>%
+  distinct(originalfeature)%>%
+  tally()   %>% 
+  ungroup() 
+```
+
+## Getting RE-to-Gene Descriptive Stats
+```{r, eval = TRUE, warning = FALSE, message = FALSE}
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+# Getting Promoters GRanges
+txdb = TxDb.Hsapiens.UCSC.hg19.knownGene
+
+get.promoter.gr <-function(txdb,up = 1000,down = 100){
+   p <- promoters(genes(txdb), upstream=up, downstream=down)}
+Promoters = get.promoter.gr(txdb)
+
+#setting up GRanges for chromMAGMA
+chromMAGMA_Granges_prep <- gene_file %>%
+  group_by(FEATURE, GWAS_TYPE) %>%
+  distinct(ensembl_gene_id, .keep_all = TRUE) %>%
+  filter(FEATURE == 'chromMAGMA')
+
+chromMAGMA_Granges_prep$strand <- '.'
+
+chromMAGMA_Granges_prep$originalfeature_CHR <- paste("chr", chromMAGMA_Granges_prep$originalfeature_CHR, sep="")
+
+
+chromMAGMA_Granges <- makeGRangesFromDataFrame(chromMAGMA_Granges_prep [,c('originalfeature_CHR',
+                                                                     'originalfeature_START',
+                                                                     'originalfeature_STOP',
+                                                                     'strand',
+                                                                     'ensembl_gene_id',
+                                                                     'external_gene_name',
+                                                                     'FEATURE',
+                                                                     'GWAS_TYPE',
+                                                                     'gene_body_start_position'
+                                                                     )],
+                         keep.extra.columns = TRUE)
+
+RE_annotation <- countOverlaps(chromMAGMA_Granges,Promoters)
+
+Annotated_chromMAGMA_promoters <- cbind(chromMAGMA_Granges_prep, RE_annotation)
+colnames(Annotated_chromMAGMA_promoters)[20] <- 'annotation'
+
+#Getting # of all REs
+Annotated_chromMAGMA_promoters %>%
+  group_by(GWAS_TYPE) %>%
+  distinct(originalfeature) %>%
+  count(GWAS_TYPE)
+
+#Getting # of Promoters 
+Annotated_chromMAGMA_promoters %>%
+  group_by(GWAS_TYPE) %>%
+  filter(annotation >= 1) %>%
+  distinct(originalfeature) %>%
+  count(GWAS_TYPE) 
+
+#Getting # of Enhancers
+Annotated_chromMAGMA_promoters %>%
+  group_by(GWAS_TYPE) %>%
+  filter(annotation < 1) %>%
+  distinct(originalfeature) %>%
+  count(GWAS_TYPE)
+
+#distance of Enhancers to genes
+##Summary Table
+#
+
+#Enhancer Distance Summary
+Annotated_chromMAGMA_promoters %>%
+  ungroup() %>%
+  filter(annotation < 1) %>%
+  mutate(distance = abs(originalfeature_START-gene_body_start_position)) %>%
+  summarise(average_enhancer_distance_kb = mean(distance), 
+            enhancer_distance_sd = sd(distance),
+            enhancer_mode = mode(distance),
+            enhancer_median = median(distance),
+            min = min(distance),
+            max = max(distance))
+
+wEnhancers <- Annotated_chromMAGMA_promoters %>%
+  group_by(GWAS_TYPE) %>%
+  filter(annotation < 1) %>%
+  mutate(distance = abs(originalfeature_START-gene_body_start_position)) 
+
+
+wEnhancers_melt <- melt(wEnhancers[,c('GWAS_TYPE','distance')])
+
+#density ridgeplot with ticks
+ggplot(wEnhancers_melt, aes(x = value, y = GWAS_TYPE)) + 
+  geom_density_ridges(
+    jittered_points = TRUE,
+    position = position_points_jitter(width = 0.05, height = 0),
+    point_shape = '|', point_size = 3, point_alpha = 1, alpha = 0.7,
+    scale = 0.9) +
+  labs(y= "histotype", x = "Enhancer-to-gene distance (basepairs)") +
+  scale_x_continuous(limits = c(0,5500000), breaks = c(0,1000000,2000000,3000000,4000000,5000000)) + theme(text = element_text(size = 7))  
+
+#chromMAGMA significant genes for NMOC with RE-to-gene distance
+wEnhancer_NMOC <- wEnhancers %>%
+  filter(GWAS_TYPE == 'NMOC')
+sig_enhancers <- merge(chromMAGMA_sig_NMOC, wEnhancer_NMOC, by = 'ensembl_gene_id') 
+```
+
+
+
+## T-tests 
+to compare the P-values between chromMAGMA and MAGMA
+```{r,eval = TRUE, warning = FALSE}
+histotype = c('HGSOC','LGSOC','CCOC','NMOC','MOC','EnOC')
+for(i in histotype) {
+  #MAGMA for each histotype
+  assign(paste0('MAGMA_',i),
+         gene_file %>%
+           filter(FEATURE == 'MAGMA') %>%
+           filter(GWAS_TYPE == paste(i)) 
+         ) 
+  #chromMAGMA for each histotype
+  assign(paste0('chromMAGMA_',i),
+         gene_file %>%
+           filter(FEATURE == 'chromMAGMA') %>%
+           filter(GWAS_TYPE == paste(i))
+         )
+  #merging MAGMA and chromMAGMA results
+  assign(paste0(i,'.merge'),
+  merge(get(paste0('MAGMA_',i))[,c('ensembl_gene_id','NEG_LOG10P')],
+             get(paste0('chromMAGMA_',i))[,c('ensembl_gene_id','NEG_LOG10P')],
+             by = 'ensembl_gene_id',
+             suffix = c(paste0('_',i,'_MAGMA'), paste0('_',i,'_chromMAGMA')) 
+    ))
+  
+  #ttest of Pvalue of MAGMA vs chromMAGMA
+  assign(paste0(i,'.density'),
+         ggplot(get(paste0(i,'.merge')), aes(x = x)) + 
+           
+          geom_density( aes(x = paste0('NEG_LOG10P_',i,'_MAGMA'), y = ..density..), fill="#D2CE12" ) +
+          geom_label( aes(x=6, y=0.20, label="data1"), color="#1EAEC2") +
+            
+          #bottom portion plot
+          geom_density( aes(x = paste0('NEG_LOG10P_',i,'_chromMAGMA'), y = -..density..), fill= "#66B32D") +
+          geom_label( aes(x=6, y=-0.20, label="data2"), color="#1EAEC2") +
+          xlab("x values"))
+
+  #T-Tests
+  assign(paste0(i,'_ttest'),
+         t.test(get(paste0('MAGMA_',i))$min_Pvalue,
+         get(paste0('chromMAGMA_',i))$min_Pvalue)
+  )
+}
+
+#summary of ttest results comparing P-values of MAGMA vs chromMAGMA; P-value reported as P<0.001 as ttest function has limits on reporting values < 1/1000
+data.frame(
+  CCOC_ttest$p.value,
+  EnOC_ttest$p.value,
+  HGSOC_ttest$p.value,
+  MOC_ttest$p.value,
+  NMOC_ttest$p.value
+)
+```
+
+ 
+## Getting # of significant genes for each histotype (Figure2A)
+descriptive counted data of significant genes for each FEATURExGWAS_TYPE
+```{r,eval = TRUE, warning = FALSE}
+
+# of MAGMA significant genes
+overall_MAGMA_count <- gene_file %>%
+  filter(FEATURE == 'MAGMA') %>%
+    group_by(FEATURE, GWAS_TYPE) %>%
+  filter(P < 0.05 / n()) %>%
+  distinct(ensembl_gene_id) %>%
+  count(GWAS_TYPE)
+
+# of chromMAGMA significant genes
+overall_chromMAGMA_count <- gene_file %>%
+  filter(FEATURE == 'chromMAGMA') %>%
+    group_by(FEATURE, GWAS_TYPE) %>%
+  filter(P < 0.05 / n()) %>% 
+  distinct(ensembl_gene_id) %>%
+  count(GWAS_TYPE)
+
+#Nested dataframes with significant genes
+overall_MAGMA_sig <- gene_file %>%
+  filter(FEATURE == 'MAGMA') %>%
+    group_by(FEATURE, GWAS_TYPE) %>%
+  filter(P < 0.05 / n()) %>%
+  distinct(ensembl_gene_id) %>%
+  split(f = as.factor(.$GWAS_TYPE)) 
+
+
+overall_chromMAGMA_sig <- gene_file %>%
+  filter(FEATURE == 'chromMAGMA') %>%
+    group_by(FEATURE, GWAS_TYPE) %>%
+  filter(P < 0.05 / n()) %>%
+  distinct(ensembl_gene_id) %>%
+  split(f = as.factor(.$GWAS_TYPE))
+
+#commonly significant genes 
+common.CCOC <- merge(overall_MAGMA_sig$CCOC,overall_chromMAGMA_sig$CCOC, by = 'ensembl_gene_id')
+common.HGSOC <- merge(overall_MAGMA_sig$HGSOC,overall_chromMAGMA_sig$HGSOC, by = 'ensembl_gene_id')
+common.LGSOC <- merge(overall_MAGMA_sig$LGSOC,overall_chromMAGMA_sig$LGSOC, by = 'ensembl_gene_id')
+common.MOC <- merge(overall_MAGMA_sig$MOC,overall_chromMAGMA_sig$MOC, by = 'ensembl_gene_id')
+common.NMOC <- merge(overall_MAGMA_sig$NMOC,overall_chromMAGMA_sig$NMOC, by = 'ensembl_gene_id')
+
+common_sig <- rbind(common.CCOC,common.HGSOC,common.LGSOC,common.MOC,common.NMOC) %>% 
+    group_by(GWAS_TYPE.x) %>% 
+    count() 
+
+#Figure 2a
+data.frame(
+  Histotype = overall_MAGMA_count$GWAS_TYPE,
+  MAGMA = overall_MAGMA_count$n - common_sig$n,
+  chromMAGMA = overall_chromMAGMA_count$n - common_sig$n,
+  Common = common_sig$n
+)
+```
+
+## Getting table with significant genes ST1 and ST2
+```{r, eval = TRUE}
+#ST2
+gene_file_sig_MAGMA <- gene_file %>%
+  filter(FEATURE == 'MAGMA') %>%
+  group_by(FEATURE, GWAS_TYPE) %>%
+  mutate(significant = case_when(
+    P < 0.05 / n() ~ "TRUE",
+    P > 0.05 / n() ~ "FALSE"
+  )) 
+head(gene_file_sig_MAGMA)
+
+#ST1
+gene_file_sig_chromMAGMA <- gene_file %>%
+  filter(FEATURE == 'chromMAGMA') %>%
+  group_by(FEATURE, GWAS_TYPE) %>%
+  mutate(significant = case_when(
+    P < 0.05 / n() ~ "TRUE",
+    P > 0.05 / n() ~ "FALSE"
+  ))
+head(gene_file_sig_chromMAGMA)
+
+
+unique_MAGMA <- gene_file_sig_MAGMA %>%
+  ungroup() %>%
+  filter(significant == "TRUE") %>%
+  distinct(ensembl_gene_id, .keep_all = TRUE) 
+#of genes in chromosome 17
+nrow(gene_file_sig_MAGMA %>%
+  ungroup() %>%
+  filter(significant == "TRUE") %>%
+  distinct(ensembl_gene_id, .keep_all = TRUE) %>%
+  filter(originalfeature_CHR == 17))
+
+unique_chromMAGMA <-gene_file_sig_chromMAGMA %>%
+  ungroup() %>%
+  filter(significant == "TRUE") %>%
+  distinct(ensembl_gene_id, .keep_all = TRUE) 
+#of genes in chromosome 17
+nrow(gene_file_sig_chromMAGMA %>%
+  ungroup() %>%
+  filter(significant == "TRUE") %>%
+  distinct(ensembl_gene_id, .keep_all = TRUE) %>%
+  filter(originalfeature_CHR == 17))
+
+common_unique <- merge(unique_MAGMA, unique_chromMAGMA, by = 'ensembl_gene_id')
+```
+
+## Supplementary Table 3
+Identifying number of significant linkage disequiliberium bins
+```{r,eval = TRUE, warning = FALSE}
+## Reading Data
+#Table of how many significant enhancers from chomMAGMA, and significant genes from MAGMA are located in each bin
+count <- wBin  %>%
+  group_by(FEATURE, GWAS_TYPE) %>%
+  filter(P < 0.05 / n()) %>%
+  group_by(FEATURE, GWAS_TYPE) %>%
+  dplyr::distinct(originalfeature, .keep_all = TRUE) %>%
+  dplyr::count(ID.LDBin.originalfeature) %>%
+  ungroup() %>%
+  spread(FEATURE, n) %>%
+  dplyr::rename(Bin_ID = ID.LDBin.originalfeature) %>%
+  dplyr::rename(MAGMA_GENES = MAGMA) %>%
+  dplyr::rename(chromMAGMA_Enhancers = chromMAGMA)
+
+count$ID <- paste(count$GWAS_TYPE,count$Bin_ID)
+
+#Significant LD BED file
+ld_bins <- read_ld_bins() %>%
+  mutate(Bin_ID = seq(nrow(.)))
+
+Count_ld_bins <- merge(count,ld_bins, by = 'Bin_ID')
+
+Count_ld_bins_Bed <- Count_ld_bins %>%
+  dplyr::select(chrom,start,end,Bin_ID)
+
+
+#Bins unique to chromMAGMA_Enhancers
+chromMAGMA_unique_bin <- count %>%
+    filter(.,!complete.cases(MAGMA_GENES))
+unique_bin_genes <- chromMAGMA_unique_bin$ID
+
+#Significant chromMAGMA_Enhancers & assigned genes with Bin IDs
+chromMAGMA_wBin_Tidy_sig <- wBin %>%
+  dplyr::select(c(ensembl_gene_id,
+                  external_gene_name,
+                  FEATURE,GWAS_TYPE,
+                  NSNPS,
+                  #ID,
+                  NPARAM,
+                  N,
+                  ZSTAT,
+                  P,
+                  NEG_LOG10P,
+                  ID.LDBin.gene_body,
+                  ID.LDBin.originalfeature))%>%
+  filter(FEATURE == 'chromMAGMA') %>%
+  group_by(FEATURE, GWAS_TYPE) %>%
+  filter(P < 0.05 / n())
+
+chromMAGMA_wBin_Tidy_sig$ID.LDBin.originalfeature <- paste(chromMAGMA_wBin_Tidy_sig$GWAS_TYPE,chromMAGMA_wBin_Tidy_sig$ID.LDBin.originalfeature) 
+
+chromMAGMA_wBin_Tidy_sig$ID.LDBin.gene_body <- paste(chromMAGMA_wBin_Tidy_sig$GWAS_TYPE,chromMAGMA_wBin_Tidy_sig$ID.LDBin.gene_body) 
+
+chromMAGMA_wBin_Tidy_sig <- chromMAGMA_wBin_Tidy_sig %>%
+  dplyr::rename(ID = ID.LDBin.originalfeature)
+
+#Genes in unique chromMAGMA bins (Supplementary table 3)
+chromMAGMA_unique_bin_genes <- merge(chromMAGMA_unique_bin, chromMAGMA_wBin_Tidy_sig %>% ungroup() %>% dplyr::select(!GWAS_TYPE), by = 'ID') %>%
+  dplyr::select(!c(chromMAGMA_Enhancers,MAGMA_GENES)) 
+head(chromMAGMA_unique_bin_genes)
+```
+
+```{r, include = FALSE}
+#Number of total assigned genes of chromMAGMA significant LD bins
+chromMAGMA_unique_bin_genes %>%
+  group_by(FEATURE, GWAS_TYPE) %>%
+  dplyr::count(.,GWAS_TYPE)
+```
+
+# Figure 2d
+Comparison of HGSOC chromMAGMA to TWAS, cis-QTL, & GWAS 
+```{r,eval = TRUE, warning = FALSE}
+ensembl.hg19 <- useEnsembl_GRCh37()
+bm.hg19 <- getBM(attributes = c('ensembl_gene_id', 
+                                'external_gene_name',
+                                'hgnc_symbol',
+                                'external_synonym',
+                                'gene_biotype'), 
+                 mart = ensembl.hg19, 
+                 filters = 'chromosome_name', values = c(1:22,'X'))
+bm.hg19.prot <- bm.hg19 %>%
+  filter(gene_biotype == 'protein_coding')
+bm.hg19.prot.melt <- melt(bm.hg19.prot, id = c('ensembl_gene_id','gene_biotype')) %>%
+  dplyr::rename(Gene = value)
+
+
+## Filtering Positive Control Genes for pCoding & HGSOC, merging with all sig genes
+PosGenes2.bm <- merge(PosGenes,bm.hg19.prot.melt, by = 'Gene')
+PosGenes2.bm.HGSOC.prot <- PosGenes2.bm %>%
+  filter(gene_biotype == 'protein_coding') %>%
+  filter(Histotype == 'HGSOC') 
+  
+GWAS <- PosGenes2.bm.HGSOC.prot %>% 
+    filter(GWAS_TYPE == 'GWAS') %>%
+    dplyr::select(ensembl_gene_id)
+
+eQTL_cisQTL = PosGenes2.bm.HGSOC.prot %>% 
+    filter(GWAS_TYPE == 'eQTL_cisQTL') %>%
+    dplyr::select(ensembl_gene_id) 
+
+HGSOC_Sig_chromMAGMA <-  gene_file %>%
+  filter(GWAS_TYPE == 'HGSOC') %>%
+  filter(FEATURE == 'chromMAGMA') %>%
+  filter(P < 0.05 / n())
+
+#Upset (Figure 2d)
+HGSOC_GWAS_cis_TWAS_list <- list(
+GWAS = GWAS$ensembl_gene_id,
+eQTL_cisQTL = eQTL_cisQTL$ensembl_gene_id,
+chromMAGMA = HGSOC_Sig_chromMAGMA$ensembl_gene_id
+)
+
+upset(fromList(HGSOC_GWAS_cis_TWAS_list),
+      nsets = length(HGSOC_GWAS_cis_TWAS_list),
+      empty.intersections = 'on',
+      order.by ='freq')
+```
+```{r, include = FALSE}
+
+#HGSOC_chromMAGM_specific Enhancer to gene Distance
+specific <- HGSOC_Sig_chromMAGMA[!HGSOC_Sig_chromMAGMA$ensembl_gene_id %in% PosGenes2.bm.HGSOC.prot$ensembl_gene_id,]
+specific$strand <- '.'
+
+specific_Granges <- makeGRangesFromDataFrame(specific[,c('originalfeature_CHR',
+                                                                     'originalfeature_START',
+                                                                     'originalfeature_STOP',
+                                                                     'strand',
+                                                                     'ensembl_gene_id',
+                                                                     'external_gene_name',
+                                                                     'FEATURE',
+                                                                     'GWAS_TYPE',
+                                                                     'gene_body_start_position'
+                                                                     )],
+                         keep.extra.columns = TRUE)
+
+specific_annotation <- countOverlaps(specific_Granges,Promoters)
+
+specific_Granges_promoters <- cbind(specific, specific_annotation)
+colnames(specific_Granges_promoters)[20] <- 'annotation'
+specific_Granges_promoters_lr <- specific_Granges_promoters %>%
+  filter(annotation < 1) %>%
+  mutate(distance = abs(originalfeature_START-gene_body_start_position)) %>%
+           filter(distance >= 500000) %>%
+  summarise(average_enhancer_distance_kb = mean(distance), 
+            enhancer_distance_sd = sd(distance),
+            enhancer_mode = mode(distance),
+            enhancer_median = median(distance),
+            min = min(distance),
+            max = max(distance))
+  
+
+```
+
+
+```{r,include = FALSE}
+## counting # of chromosomes
+chromosome_count <- gene_file  %>%
+  filter(GWAS_TYPE == 'NMOC') %>%
+  group_by(FEATURE, GWAS_TYPE) %>%
+  filter(P < 0.05 / n()) %>%
+  distinct(ensembl_gene_id, .keep_all = TRUE) %>%
+  count(originalfeature_CHR)
+```
+
+```{r,include = FALSE}
+MAGMA <- gene_file %>% 
+filter(FEATURE == 'MAGMA') %>%
+filter(GWAS_TYPE == 'HGSOC')
+
+chromMAGMA <- gene_file %>% 
+filter(FEATURE == 'chromMAGMA') %>%
+filter(GWAS_TYPE == 'HGSOC')
+
+setdiff(MAGMA$ensembl_gene_id, chromMAGMA$ensembl_gene_id)
+
+test <- gene_file %>% 
+filter(FEATURE == 'MAGMA') %>%
+  filter(GWAS_TYPE == 'HGSOC') %>%
+  filter(P < 2.87E-06)
+```

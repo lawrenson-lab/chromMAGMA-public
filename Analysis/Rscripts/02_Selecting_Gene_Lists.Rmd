@@ -1,0 +1,183 @@
+---
+title: "02 Generation of Gene-Level Results for MAGMA and chromMAGMA"
+output: html_document
+---
+*Robbin Nameki, Anamay Shetty et al.*
+*August 2021*
+
+# Introduction
+The following code is for further cleanup/tidying of data from 01, followed by a crucial step to assign the lowest P-value to each gene for the generation of gene-level results.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Libraries
+```{r, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(reshape2)
+```
+## Sourcecode
+```{r,eval = TRUE}
+source('Rscripts/Utils.R')
+```
+## Tidying data from 01 
+This chunk describes cleaning and tidying data from 01
+```{r, eval = TRUE}
+#Reading_Full_chromMAGMA and MAGMA table with tidied names
+full_stat <- read_final_gene_results_wEnsembl()
+#taking out gene synonyms on different chromosomes
+full_stat <- full_stat %>%
+  filter(CHR == chromosome_name)
+
+#Selecting for only protein coding genes
+full_stat_prot <- full_stat[complete.cases(full_stat),]
+
+#Selecting Columns and tidying names of FEATURE & GWAS_DATA; to keep consistent language with manuscript.
+full_stat_prot.gene_id_tidycols <- full_stat_prot %>%
+  dplyr::select(ensembl_gene_id,external_gene_name,FEATURE,GWAS_TYPE,originalfeature, CHR,START,STOP,NSNPS,NPARAM,N,ZSTAT,P,chromosome_name,start_position,end_position)
+
+full_stat_prot.gene_id_tidycols <- full_stat_prot.gene_id_tidycols %>% 
+  filter(!grepl('snp_to_individual_exons', FEATURE)) %>%
+  dplyr::mutate_if(is.character, 
+                   stringr::str_replace_all, pattern = "snp_to_subsetted_enhancers", replacement = "chromMAGMA")%>%
+  dplyr::mutate_if(is.character, 
+                   stringr::str_replace_all, pattern = "snp_to_genes", replacement = "MAGMA")%>%
+  dplyr::mutate_if(is.character, 
+                   stringr::str_replace_all, pattern = "all_non_mucinous", replacement = "NMOC") %>%
+  dplyr::mutate_if(is.character, 
+                   stringr::str_replace_all, pattern = "clearcell", replacement = "CCOC") %>%
+  dplyr::mutate_if(is.character, 
+                   stringr::str_replace_all, pattern = "endometrioid", replacement = "EnOC") %>%
+  dplyr::mutate_if(is.character, 
+                   stringr::str_replace_all, pattern = "mucinous_all", replacement = "MOC")%>%
+  dplyr::mutate_if(is.character, 
+                   stringr::str_replace_all, pattern = "ser_lg_lmp", replacement = "LGSOC")%>%
+  dplyr::mutate_if(is.character, 
+                   stringr::str_replace_all, pattern = "serous_hg_extra", replacement = "HGSOC") %>%
+  dplyr::rename(originalfeature_CHR = CHR) %>%
+  dplyr::rename(originalfeature_START = START) %>%
+  dplyr::rename(originalfeature_STOP = STOP) %>%
+  dplyr::rename(gene_body_chromosome_name = chromosome_name) %>%
+  dplyr::rename(gene_body_start_position = start_position) %>%
+  dplyr::rename(gene_body_end_position = end_position)
+head(full_stat_prot.gene_id_tidycols)
+```
+
+## Assigning most significant P-value (enhancers) to genes
+Since multiple enhancers can be assigned to genes, the most significant P-value is assigned to genes to generate gene-level outputs for MAGMA and chromMAGMA. 
+```{r, eval = TRUE}
+full_stat_prot.gene_id_tidycols_maximum <- full_stat_prot.gene_id_tidycols %>%
+  dplyr::group_by(FEATURE, GWAS_TYPE, external_gene_name) %>%
+  dplyr::mutate(min_Pvalue = min(P)) %>% 
+  filter(P == min_Pvalue) %>%
+  #genehancer has duplicates of the same genes with different names so taking out dups
+  filter(!duplicated(external_gene_name))
+#ranking by the NEG_LOG10P
+full_stat_prot.gene_id_tidycols_maximum_arranged <- full_stat_prot.gene_id_tidycols_maximum %>%
+  dplyr::group_by(FEATURE, GWAS_TYPE) %>%
+  mutate(NEG_LOG10P = -log10(min_Pvalue)) %>%
+  dplyr::group_by(FEATURE, GWAS_TYPE) %>%
+  dplyr::arrange(desc(NEG_LOG10P),.by_group = TRUE) 
+
+#Cleaned table consisting of pcoding genes with most significant enhancer assigned
+head(full_stat_prot.gene_id_tidycols_maximum_arranged)
+
+## Cleaned table consisting of pcoding genes with most significant enhancer assigned
+#saveRDS(x = full_stat_prot.gene_id_tidycols_maximum_arranged, file = 'Data/Gene_Level.4.9.21.rds')
+```
+
+
+```{r, include = FALSE}
+full_stat_prot.gene_id_tidycols_maximum_arranged$originalfeature_CHR <- paste0('chr',full_stat_prot.gene_id_tidycols_maximum_arranged$originalfeature_CHR)
+full_stat_prot.gene_id_tidycols_maximum_arranged$gene_body_chromosome_name <- paste0('chr',full_stat_prot.gene_id_tidycols_maximum_arranged$gene_body_chromosome_name)
+  
+histotype = c('HGSOC','LGSOC','CCOC','NMOC','MOC','EnOC')
+for(i in histotype) {
+#chromMAGMA
+  assign(paste0('chromMAGMA_',i),
+         full_stat_prot.gene_id_tidycols_maximum_arranged %>%
+           filter(FEATURE == 'chromMAGMA') %>%
+           filter(GWAS_TYPE == paste(i)))
+  
+#chromMAGMA_Loop
+  assign(paste0('Loop_chromMAGMA_',i),
+       get(paste0('chromMAGMA_',i)) %>%
+      mutate(gene_body_start = gene_body_start_position -100) %>%
+      mutate(gene_body_stop = gene_body_start_position + 100) %>%
+    ungroup() %>%
+      dplyr::select(originalfeature_CHR,
+                originalfeature_START,
+                originalfeature_STOP,
+                gene_body_chromosome_name,
+                gene_body_start,
+                gene_body_stop,
+                external_gene_name,
+                NEG_LOG10P) 
+  )
+
+
+#chromMAGMA_Bed
+  assign(paste0('Bed_chromMAGMA_',i),
+       get(paste0('chromMAGMA_',i)) %>%
+    ungroup() %>%
+      dplyr::select(originalfeature_CHR,
+                originalfeature_START,
+                originalfeature_STOP,
+                P) 
+  )
+
+  
+#chromMAGMA_Loop_sig
+  assign(paste0('Loop_chromMAGMA_sig',i),
+       get(paste0('chromMAGMA_',i)) %>%
+         group_by(FEATURE, GWAS_TYPE) %>%
+         filter(P < 0.05 / n()) %>% 
+      mutate(gene_body_start = gene_body_start_position -100) %>%
+      mutate(gene_body_stop = gene_body_start_position + 100) %>%
+         ungroup() %>%
+         dplyr::select(originalfeature_CHR,
+                originalfeature_START,
+                originalfeature_STOP,
+                gene_body_chromosome_name,
+                gene_body_start,
+                gene_body_stop,
+                external_gene_name,
+                NEG_LOG10P) 
+  )
+
+#chromMAGMA_Bed_sig
+assign(paste0('Bed_chromMAGMA_sig',i),
+     get(paste0('chromMAGMA_',i)) %>%
+       group_by(FEATURE, GWAS_TYPE) %>%
+       filter(P < 0.05 / n()) %>%
+  ungroup() %>%
+    dplyr::select(originalfeature_CHR,
+              originalfeature_START,
+              originalfeature_STOP,
+              P) 
+)
+
+}
+```
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

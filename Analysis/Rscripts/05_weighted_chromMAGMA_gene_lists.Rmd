@@ -1,0 +1,93 @@
+---
+title: "05 weighing chromMAGMA gene-level results with Mullerian RNAseq Data"
+output: html_document
+---
+# Introduction
+The following script describes the process of weghing chromMAGMA gene-level results from 02 with Mullerian RNAseq data from Corona et al. 2020 & GEOXXXXX. 
+This breaks the ties of chromMAGMA results (due to one enhancer being assigned to multiple genes) for further gene-set enrichment analysis.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Libraries
+```{r, message = FALSE, warning = FALSE}
+library(tidyverse)
+```
+## Sourcecode
+```{r,eval = TRUE}
+source('Rscripts/Utils.R')
+```
+
+## Reading mullerian RNAseq samples
+```{r,eval = TRUE}
+#Getting Corona et al. 2020 
+corona2020 <- read_corona2020_FTSEC()
+
+#Getting Average Gene Expression across all samples
+corona2020$average_expression <- rowMeans(corona2020[,c(1:24)])
+
+corona2020_avg_expression <- corona2020 %>%
+  dplyr::select(average_expression,ensembl_gene_id)
+```
+
+##Weighing NEGLOG10P chromMAGMA with mullerian RNAseq samples
+```{r, eval=TRUE}
+## Reading chromMAGMA Results
+Gene_Level <- read_gene_level()
+Gene_Level_chromMAGMA <- Gene_Level %>%
+  filter(FEATURE == 'chromMAGMA')
+
+## Adding average expression column from corona et al.
+Gene_Level_chromMAGMA_avg <- merge(Gene_Level_chromMAGMA,corona2020_avg_expression, by = 'ensembl_gene_id')
+length(unique(Gene_Level_chromMAGMA_avg$ensembl_gene_id))
+
+#27 genes are not in expression data, therefore not in analysis
+n <- Gene_Level_chromMAGMA[!Gene_Level_chromMAGMA$ensembl_gene_id %in% Gene_Level_chromMAGMA_avg$ensembl_gene_id,]
+length(unique(n$ensembl_gene_id))
+
+## Weighted Final List chromMAGMA
+weighted_final_list_chromMAGMA <- Gene_Level_chromMAGMA_avg  %>%
+  filter(FEATURE == 'chromMAGMA') %>%
+  mutate(weighted_P = NEG_LOG10P*average_expression) %>%
+  dplyr::group_by(GWAS_TYPE) %>%
+  dplyr::arrange(desc(weighted_P), .by_group = TRUE) %>%
+  group_by(FEATURE,GWAS_TYPE) %>%
+  filter(!duplicated(ensembl_gene_id))
+  
+head(weighted_final_list_chromMAGMA)
+  
+#saveRDS(weighted_final_list_chromMAGMA, file = 'Data/Gene_Level_Weighted_4.9.21.rds')
+```
+
+
+```{r,include = FALSE}
+### Extra Plotting-Related Stuff 
+### Getting all FEATURExGWAS & plotting correlation of -log10(P) vs weighted -log10(P)
+#histotype = c('HGSOC','LGSOC','CCOC','NMOC','MOC','EnOC')
+##R2 value
+##MAGMA
+#for(i in histotype) {
+##chromMAGMA
+#  assign(paste0('chromMAGMA_',i),
+#         weighted_final_list_chromMAGMA %>%
+#           filter(FEATURE == 'chromMAGMA') %>%
+#           filter(GWAS_TYPE == paste(i)) %>%
+#           mutate(rank = rank(-weighted_P))
+#         ) 
+#  assign(paste0('ggplot_chromMAGMA_',i),
+#         ggscatter(get(paste0('chromMAGMA_',i)), x = 'NEG_LOG10P', y = 'weighted_P', add = "reg.line") +
+#           stat_cor(label.y = 100, 
+#           aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"))) +
+#  stat_regline_equation(label.y = 120) +
+#    ggtitle(paste0('chromMAGMA_',i))
+#  )
+#}
+#ggarrange(
+#    ggplot_chromMAGMA_CCOC,
+#    ggplot_chromMAGMA_EnOC,
+#    ggplot_chromMAGMA_HGSOC,
+#    ggplot_chromMAGMA_LGSOC,
+#      ggplot_chromMAGMA_MOC,
+#    ggplot_chromMAGMA_NMOC
+#)
+```

@@ -1,0 +1,207 @@
+---
+title: "Processing chromMAGMA Results"
+author: "Anamay Shetty"
+date: "17/08/2021"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+```
+
+
+The first step of MAGMA/chromMAGMA is to run MAGMA. Please refer to Figure 1 below.
+
+Ensure you have downloaded MAGMA to the `apps` folder of the main directory following instructions on the MAGMA website. 
+
+### preparing files
+
+There are the following files needed to run MAGMA:
+
+1. A .loc file indicating gene/enhancer locations, to inform MAGMA which SNPs lie within gene/enhancer boundaries and which to include in calculating enrichment.
+
+cMAGMA uses the locations of the gene-body.
+We can download the file from the GENCODE website:
+
+https://ctg.cncr.nl/software/MAGMA/aux_files/NCBI37.3.zip
+
+and extract the .loc file. We also need to reverse the file to make it amenable for usage in MAGMA. 
+
+```{bash}
+
+awk '{printf "%s\t%s\t%s\t%s\t%s\n", $6, $2, $3, $4, $5}' NCBI37.3.gene.loc > NCBI37.3.gene.reversed.loc
+
+```
+
+chromMAGMA uses the locations of enhancer elements.
+
+
+```{bash}
+
+# This is on the cluster and is the provided table with all GeneHancer results
+Processing/Data/GeneHancer_version_4_7.hg19.bed | \
+sed 's|chr||g' | \
+awk '{printf "%s:%s-%s\t%s\n", $1, $2, $3, $0}' > Processing/Data/munged_genehancer_enhancer_list.txt
+
+cut -f1-4 Processing/Data/munged_genehancer_enhancer_list.txt | sort | uniq > Processing/Data/genehancer.enhancer.loc
+
+# This subsets the enhancer peaks by those which are active within H3K27ac Mullerian ovarian cancer and fallopian tube samples
+awk '{printf "chr%s\t%s\t%s\n", $2, $3, $4}' Processing/Data/genehancer.enhancer.loc | \
+	bedtools intersect -a - -b Processing/Data/ivetth_peak_regions.hg19.bed | \
+	sort | \
+	uniq | \
+	sed 's/chr//g' | \
+	awk '{printf "%s:%s-%s\t%s\n", $1, $2, $3, $0}' > Processing/Data/genehancer.subsetted_ovca.enhancer.loc
+
+```
+
+
+2. A .synonyms file indicating SNP synonyms
+
+This is provided on the MAGMA website:
+
+https://ctg.cncr.nl/software/MAGMA/aux_files/dbsnp151.synonyms.zip
+
+3. A .bed, .bim and .fam file indicating the reference location of SNPs 
+
+This is provided on the MAGMA website:
+
+https://ctg.cncr.nl/software/MAGMA/ref_data/g1000_eur.zip
+
+4. A flat file containing a list of SNPs and p-values for each SNP as the primary data source for enrichments.
+
+This is from the forthcoming OCAC paper
+
+5. A list of each SNP's RSID and position in the genome
+
+```{bash}
+
+# This file is not currently present as it is too big
+#Processing/Data/1000g_rsid_chr_pos.txt
+
+```
+
+
+### magma --annotate
+
+Once we have collected this data, we now need to generate a .annot file which will act as an annotation noting which SNPs lie within each gene-body/enhancer region.
+
+```{bash}
+# This will do the the gene assigments
+../apps/MAGMA/magma \
+	--annotate \
+	--snp-loc Processing/Data/1000g_rsid_chr_pos.txt \
+	--gene-loc Processing/Data/NCBI37.3.gene.reversed.loc \
+	--out Processing/Data/snp_gene_annotations_GRCh37
+
+# This will do the enhancer assignments
+../apps/MAGMA/magma \
+        --annotate \
+        --snp-loc Processing/Data/1000g_rsid_chr_pos.txt \
+        --gene-loc Processing/Data/genehancer.subsetted_ovca.enhancer.loc \
+        --out Processing/Data/snp_activeenhancer_annotations_GRCh37.genes.annot
+```
+
+
+### run magma
+
+We can now run MAGMA using the above files. 
+
+We have a helper script to run MAGMA, which takes in 4 arguments:
+
+1. The name of the GWAS subtype
+
+2. The sample size of the GWAS involved in that subtype (cases and controls added together)
+
+3. The names of the .annot file
+
+4. The output directory - either snps_to_genes or snps_to_enhancers
+
+The helper script is shown below:
+
+```{bash eval=FALSE}
+while read x
+  do sh magma_execution_script.sh $x snp_exons_annotations_GRCh37.genes.annot snp_to_genes & \
+  sh magma_execution_script.sh $x snp_activeenhancer_annotations_GRCh37.genes.annot snp_to_subsetted_enhancers & done \
+< Processing/Data/gwas_sample_sizes.txt
+```
+
+
+## magma extractions
+
+We now need to take the MAGMA output and convert it into a clean dataframe. First let us read in the various files containing the output from MAGMA. There are two types of file: .genes.out and .genes.raw. The former is the flat file we will import; the latter is a file that can be used by MAGMA for its onward analysis pipeline. 
+
+```{r Read in MAGMA output data}
+interim_gene_results_v1.08 <- 
+  # This specifies all of the files present in the folders
+  tibble(full_file_name = list.files("Processing/Data", full.names = TRUE, recursive = TRUE, pattern = "*.genes.out")) %>%
+  # This separates the files name and extracts the two variables we are looking at
+  separate(
+    full_file_name, 
+    # This needs to be changed depending on which layer we are taking the file from
+    into = c(NA, NA, NA, "FEATURE", "GWAS_TYPE", NA, NA), 
+    sep = "/|\\.",
+    remove = FALSE
+    ) %>%
+  group_by(full_file_name) %>%
+  # This reads in each of the MAGMA output files
+  mutate(df = map(full_file_name, read_delim, trim_ws = TRUE, delim = " ", col_types = magma_col_specs)) %>%
+  ungroup %>%
+  select(-full_file_name) %>%
+  # This turns the nested dataframe into a normal dataframe
+  unnest(df)
+```
+
+Now we have a list of enhancers and and gene body enrichments based on the SNPs lying within them. Whilst we can use the gene-body enrichments straight away, we need to assign each enhancer to its relevant gene. We simply take our matches enhancer/gene list and add it to our larger dataframe. 
+
+```{r Create a gene-enhancer list which can be matched}
+enhancer_gene_list <- read_tsv(
+  "Processing/Data/munged_genehancer_enhancer_list.txt",
+  col_names = c("ENHANCER", "CHR", "START", "STOP", "GENE", "SCORE", NA)
+) %>%
+  mutate(CHR = str_remove(CHR, "chr")) %>%
+  select(-SCORE, -X7)
+```
+
+Now let us merge this to the original dataframe.
+
+```{r Assign gene names to MAGMA output files}
+final_gene_results_v1.08 <- interim_gene_results_v1.08 %>%
+  {bind_rows(
+    # enhancers
+    inner_join(., rename(enhancer_gene_list, GENE = ENHANCER, newGENE = GENE)),
+    # gene-bodies
+    mutate(filter(., FEATURE == "snp_to_genes"), newGENE = GENE)
+  )} %>%
+  rename(originalfeature = GENE, GENE = newGENE)
+```
+
+```{r Save MAGMA Results}
+
+if(!file.exists("../Data_RDS/final_gene_results_v1.08.rds")) {
+  saveRDS(final_gene_results_v1.08, "../Data_RDS/final_gene_results_v1.08.rds")
+}
+
+```
+
+This creates the weighted gene lists
+
+```{r}
+input_folder <- "Analysis/Data/"
+output_folder <- "Processing/gsea_input_files/"
+chromMAGMA <- readRDS(paste0(input_folder, "Gene_Level_Weighted_4.9.21.rds"))
+cMAGMA <- readRDS(paste0(input_folder, "Gene_Level.4.9.21.rds"))
+
+# This contains the unadjusted values
+cMAGMA %>%
+  # This ensures we are only using the unadjusted values for cMAGMA
+  filter(FEATURE == "MAGMA") %>%
+  # This adds the chromMAGMA resukts
+  bind_rows(chromMAGMA) %>%
+  select(FEATURE, GWAS_TYPE, external_gene_name, STATISTIC = NEG_LOG10P) %>%
+  group_by(FEATURE, GWAS_TYPE) %>%
+  nest() %>%
+  {pmap(list(.$FEATURE, .$GWAS_TYPE, .$data), ~write_tsv(..3, paste0(output_folder, ..2, ".", ..1, ".stat.rnk")))}
+
+```
+

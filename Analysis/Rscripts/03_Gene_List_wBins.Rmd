@@ -1,0 +1,166 @@
+---
+title: "03 Linkage Disequilibrium Level Results for MAGMA and chromMAGMA"
+output: html_document
+---
+*Robbin Nameki, Anamay Shetty et al.*
+*August 2021*
+
+# Introduction
+The following workflow describes assigning linkage disequilibrium bins to chromMAGMA and MAGMA results. Linkage disequiliberium information is from https://bitbucket.org/nygcresearch/ldetect-data/src/master/. 
+
+This data will later be used to identify unique linkage disequiliberium regions identified by chromMAGMA, in comparison to MAGMA in 04. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Libraries
+```{r, message = FALSE, warning = FALSE}
+library(biomaRt)
+library(tidyverse)
+library(valr)
+```
+## Sourcecode
+```{r,eval = TRUE}
+source('Rscripts/Utils.R')
+```
+## Reading files
+```{r, eval = TRUE}
+.ensembl <- useEnsembl_GRCh37()
+
+gene_file <- read_gene_level()
+
+ld_bins <- read_ld_bins()  %>%
+    mutate(ID = seq(nrow(.)))
+```
+
+## Functions 
+used for the assignments of MAGMA and chromMAGMA results to linkage disequiliberium bins
+```{r, eval = TRUE}
+# This looks at the MAGMA and chromMAGMA referenced genes ----
+run_intersection <- function(df, old_col_names, suffix) {
+  
+  colnames(df)[colnames(df) %in% old_col_names] <- c("chrom", "start", "end")
+  
+  df <- df %>%
+    mutate(chrom = paste0("chr", chrom)) %>%
+    bed_intersect(ld_bins, suffix = c("", suffix)) %>%
+    dplyr::select(-.overlap) %>%
+    mutate(chrom = str_remove(chrom, "chr"))
+  
+  
+  colnames(df)[colnames(df) %in% c("chrom", "start", "end")] <- old_col_names
+  
+  return(df)
+
+}
+
+subset_by_significant_gene <- function(df) {
+  df %>%
+    group_by(FEATURE, GWAS_TYPE) %>%
+    filter(P < 0.05 / n())
+}
+```
+
+## Binning genes (MAGMA) or enhancers (chromMAGMA) to linkage disequilibrium bins
+```{r,eval = TRUE}
+
+ld_annotation_originalfeature<- run_intersection(
+  gene_file, 
+  c("originalfeature_CHR", "originalfeature_START", "originalfeature_STOP"),
+  ".LDBin.originalfeature"
+)
+
+ld_annotation_genebody <- run_intersection(
+  gene_file, 
+  c("gene_body_chromosome_name", "gene_body_start_position", "gene_body_end_position"),
+  ".LDBin.gene_body"
+)
+
+ld_annotated_gene_file <- full_join(
+  ld_annotation_genebody, 
+  ld_annotation_originalfeature,
+  c("ensembl_gene_id", "external_gene_name", "FEATURE", "GWAS_TYPE", "originalfeature", "originalfeature_CHR", "originalfeature_START", "originalfeature_STOP", "NSNPS", "NPARAM", "N", "ZSTAT", "P", "gene_body_chromosome_name", "gene_body_start_position", "gene_body_end_position", "min_Pvalue", "NEG_LOG10P")
+)
+
+rm(ld_annotation_genebody, ld_annotation_originalfeature)
+
+head(ld_annotated_gene_file)
+
+#Writing table of Gene_level results that are now binned into LD bins
+#saveRDS(ld_annotated_gene_file, "Data/Gene_Level_Bin.4.9.21.rds")
+```
+
+
+
+```{r, include = FALSE}
+#ld_annotated_gene_file %>%
+#  mutate(bin_difference = ID.LDBin.originalfeature - ID.LDBin.gene_body) %>%
+#  count(bin_difference) %>%
+#  filter(bin_difference != 0) %>%
+#  ggplot(aes(x = bin_difference, y = n)) +
+#  geom_point()
+#
+#ld_annotated_gene_file %>%
+#  subset_by_significant_gene() %>%
+#  count(ID.LDBin.gene_body) %>%
+#  ungroup() %>%
+#  spread(FEATURE, n) %>%
+#  rename(LD_bin_number = ID.LDBin.gene_body) %>%
+#  print(n = nrow(.))
+#
+## Ignore below ----
+#
+#full_join(
+#  ld_annotation_genebody, 
+#  ld_annotation_originalfeature,
+#  c("ensembl_gene_id", "external_gene_name", "FEATURE", "GWAS_TYPE", "originalfeature", "originalfeature_CHR", #"originalfeature_START", "originalfeature_STOP", "NSNPS", "NPARAM", "N", "ZSTAT", "P", "gene_body_chromosome_name", #"gene_body_start_position", "gene_body_end_position", "min_Pvalue", "NEG_LOG10P")
+#  ) %>% 
+#  filter_all(any_vars(is.na(.))) %>%
+#  t()
+#
+#filter(ld_annotation_genebody, ensembl_gene_id == "ENSG00000117419", GWAS_TYPE == "CCOC", originalfeature == #"1:44820025-44821670") %>%
+#  t()
+#
+#full_join(
+#  run_intersection(
+#    "gene_body_chromosome_name", 
+#    "gene_body_start_position", 
+#    "gene_body_end_position",
+#    ".LDBin.gene_body"
+#  ),
+#  
+#)
+#
+#significant_genes_body <- run_intersection(
+#  "gene_body_chromosome_name", 
+#  "gene_body_start_position", 
+#  "gene_body_end_position",
+#  ".LDBin.gene_body"
+#  ) %>%
+#  subset_by_significant_gene() %>%
+#  dplyr::select(ensembl_gene_id:originalfeature)
+#
+#significant_enhancer <- run_intersection(
+#  "originalfeature_CHR", 
+#  "originalfeature_START", 
+#  "originalfeature_STOP"
+#) %>%
+#  subset_by_significant_gene() %>%
+#  dplyr::select(ensembl_gene_id:originalfeature)
+#
+#run_intersection(
+#  "originalfeature_CHR", 
+#  "originalfeature_START", 
+#  "originalfeature_STOP"
+#) %>%
+#  subset_by_significant_gene() %>%
+#  filter(ensembl_gene_id == "ENSG00000125637") %>%
+#  View()
+#  group_by(ensembl_gene_id, external_gene_name, FEATURE, GWAS_TYPE, originalfeature) %>%
+#  count() %>%
+#  filter(n > 1)
+#
+#full_join(significant_enhancer, significant_genes_body) %>%
+#  distinct()
+#  filter_all(any_vars(is.na(.)))
+```

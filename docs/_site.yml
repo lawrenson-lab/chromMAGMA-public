@@ -1,0 +1,30 @@
+---
+name: "chromMAGMA"
+navbar:
+title: "Home"
+author: "Robbin Nameki & Anamay Shetty"
+date: "May, 2021" 
+  left:
+    - text: "Home"
+      href: index.html
+    - text: "01 Curating chromMAGMA and MAGMA Gene Identifiers"
+      href: 01_getEnsemblGeneId.html 
+    - text: "02 Generation of Gene-Level Results for MAGMA and chromMAGMA"
+      href: 02_Selecting_Gene_Lists.html 
+    - text: "03 Linkage Disequilibrium Level Results for MAGMA and chromMAGMA"
+      href: 03_Gene_List_wBins.html 
+    - text: "04 General Descriptive Statistics and Generation of Supplementary Table 3, Figures 1C, 2A, and 2C"
+      href: 04_Descriptive_Statistics_Graphs.html 
+    - text: "05 weighing chromMAGMA gene-level results with Mullerian RNAseq Data"
+      href: 05_weighted_chromMAGMA_gene_lists.html 
+    - text: "06 Pathway Gene-Set Enrichment Analysis chromMAGMA"
+      href: 06_Pathway_GSEA_Graphs_chromMAGMA.html 
+    - text: "07 MsigDB & TF Super-Enhancer BROAD Gene-set Enrichment Analysis"
+      href: 07.5_BROAD_GSEA_Processing.html
+    - text: "08 Super-Enhancer Associated Transcription Graphs"
+      href: 08_SE_TF_GSEA_Analysis-Graphs.html 
+    - text: "09 Cleaning legacy transcription factor MsigDB BROAD GSEA results - Supplementary Table 6"
+      href: 09_Msigdb_Analysis-Graphs_noFDRqvalue_clean.html
+    - text: "10 Getting List of Nexus Transcription Factors"
+      href: 10_SE-Msigdb_TFs.html
+---

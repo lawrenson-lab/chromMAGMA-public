@@ -1,0 +1,726 @@
+---
+title: "06 Pathway Gene-Set Enrichment Analysis chromMAGMA"
+output: html_document
+---
+*Robbin Nameki, Anamay Shetty et al.*
+*August 2021*
+
+# Introduction
+The following script describes the process of conducting gene-set pathway enrichment analysis using the R package ClusterProfiler. This analysis takes a gene-set (in this case pathway gene-sets from the GO data base) and asks whether the gene-set is enriched in a ranked list (in this case chromMAGMA genes ranked by RNA expression weighted P-values). The gseGO() functions takes a bit to run. 
+
+This document can also be adapted to analyze conventional MAGMA gene-lists
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## libraries
+```{r, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(clusterProfiler)
+library(enrichplot)
+library(ggplot2)
+library(DESeq2)
+library(reshape2)
+library(biomaRt)
+library(UpSetR)
+library(ggpubr)
+```
+
+## Sourcecode
+```{r,eval = TRUE}
+source('Rscripts/Utils.R'  )
+```
+
+## Getting entrezGeneIDs for the gene-list
+The identifiers in the weighted gene-lists are converted to entrezGeneIDs to match the identifiers in the GO database. 
+HLA genes are removed to reduce bias to these highly active regions. 
+```{r, eval = TRUE}
+#Getting EntrezGeneIDs
+ensembl <- useEnsembl_GRCh37()
+bm <- getBM(attributes=c('ensembl_gene_id', 'external_gene_name', 'entrezgene_id'),
+            filters = 'chromosome_name',
+            values = c(1:22,'X'),
+            mart = ensembl)
+bm.unique_external_gene_name <- bm[!duplicated(bm[,'external_gene_name']),]
+
+#Assigning EntrezGeneIDs to analysis
+Gene_Level_Weighted_chromMAGMA <- read_gene_level_weighted()
+gene_level.ensembl <- merge(Gene_Level_Weighted_chromMAGMA, bm.unique_external_gene_name,by = 'external_gene_name')
+
+
+gene_level.ensembl.entrez <- gene_level.ensembl[!gene_level.ensembl$entrezgene_id =='',]
+
+#Taking out HLA genes from dataframe
+HLA_genes <- read_HLA_genes()
+gene_level.ensembl.entrez.noHLA <- gene_level.ensembl.entrez[!(gene_level.ensembl.entrez$external_gene_name %in% HLA_genes$hgnc_symbol),]
+```
+
+## Getting Gene Lists
+```{r, eval =TRUE}
+histotype = c('HGSOC','LGSOC','CCOC','NMOC','MOC','EnOC')
+for(i in histotype) {
+#chromMAGMA
+  assign(paste0('chromMAGMA_',i),
+        gene_level.ensembl.entrez.noHLA %>%
+           filter(FEATURE == 'chromMAGMA') %>%
+           filter(GWAS_TYPE == paste(i))%>%
+    dplyr::select(entrezgene_id,weighted_P,external_gene_name) %>%
+      arrange(desc(weighted_P))
+        )
+}
+
+
+
+#chromMAGMA_List
+chromMAGMA.geneList.CCOC <- chromMAGMA_CCOC[,2]
+names(chromMAGMA.geneList.CCOC) = as.character(chromMAGMA_CCOC[,1])
+chromMAGMA.geneList.CCOC = sort(chromMAGMA.geneList.CCOC, decreasing = TRUE)
+
+chromMAGMA.geneList.EnOC <- chromMAGMA_EnOC[,2]
+names(chromMAGMA.geneList.EnOC) = as.character(chromMAGMA_EnOC[,1])
+chromMAGMA.geneList.EnOC = sort(chromMAGMA.geneList.EnOC, decreasing = TRUE)
+
+chromMAGMA.geneList.HGSOC <- chromMAGMA_HGSOC[,2]
+names(chromMAGMA.geneList.HGSOC) = as.character(chromMAGMA_HGSOC[,1])
+chromMAGMA.geneList.HGSOC = sort(chromMAGMA.geneList.HGSOC, decreasing = TRUE)
+
+chromMAGMA.geneList.LGSOC <- chromMAGMA_LGSOC[,2]
+names(chromMAGMA.geneList.LGSOC) = as.character(chromMAGMA_LGSOC[,1])
+chromMAGMA.geneList.LGSOC = sort(chromMAGMA.geneList.LGSOC, decreasing = TRUE)
+
+chromMAGMA.geneList.MOC <- chromMAGMA_MOC[,2]
+names(chromMAGMA.geneList.MOC) = as.character(chromMAGMA_MOC[,1])
+chromMAGMA.geneList.MOC = sort(chromMAGMA.geneList.MOC, decreasing = TRUE)
+
+chromMAGMA.geneList.NMOC <- chromMAGMA_NMOC[,2]
+names(chromMAGMA.geneList.NMOC) = as.character(chromMAGMA_NMOC[,1])
+chromMAGMA.geneList.NMOC = sort(chromMAGMA.geneList.NMOC, decreasing = TRUE)
+
+```
+## GSEGo 
+```{r, eval = TRUE, warning = FALSE}
+organism = 'org.Hs.eg.db'
+#BiocManager::install(organism, character.only = TRUE)
+library(organism, character.only = TRUE)
+organism.2 = org.Hs.eg.db
+
+chromMAGMA.CCOC.gse <- gseGO(geneList= chromMAGMA.geneList.CCOC, 
+             ont ="ALL", 
+             keyType = "ENTREZID", 
+             nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = organism.2, 
+             pAdjustMethod = "BH")
+
+chromMAGMA.EnOC.gse <- gseGO(geneList= chromMAGMA.geneList.EnOC, 
+             ont ="ALL", 
+             keyType = "ENTREZID", 
+             nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = organism.2, 
+             pAdjustMethod = "BH")
+
+chromMAGMA.HGSOC.gse <- gseGO(geneList= chromMAGMA.geneList.HGSOC, 
+             ont ="ALL", 
+             keyType = "ENTREZID", 
+             nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = organism.2, 
+             pAdjustMethod = "BH")
+
+chromMAGMA.LGSOC.gse <- gseGO(geneList= chromMAGMA.geneList.LGSOC, 
+             ont ="ALL", 
+             keyType = "ENTREZID", 
+             nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = organism.2, 
+             pAdjustMethod = "BH")
+
+chromMAGMA.MOC.gse <- gseGO(geneList= chromMAGMA.geneList.MOC, 
+             ont ="ALL", 
+             keyType = "ENTREZID", 
+             nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = organism.2, 
+             pAdjustMethod = "BH")
+
+chromMAGMA.NMOC.gse <- gseGO(geneList= chromMAGMA.geneList.NMOC, 
+             ont ="ALL", 
+             keyType = "ENTREZID", 
+             nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = organism.2, 
+             pAdjustMethod = "BH")
+
+##output saved to one file.
+##rbinding these dataframes makes ST4
+#saveRDS(chromMAGMA.CCOC.gse, 'Data/GSEgo')
+#saveRDS(chromMAGMA.EnOC.gse, 'Data/GSEgo')
+#saveRDS(chromMAGMA.HGSOC.gse, 'Data/GSEgo')
+#saveRDS(chromMAGMA.LGSOC.gse, 'Data/GSEgo')
+#saveRDS(chromMAGMA.MOC.gse, 'Data/GSEgo')
+#saveRDS(chromMAGMA.NMOC.gse, 'Data/GSEgo')
+```
+
+
+```{r,eval=TRUE}
+file_location <- "Data/GSEgo"
+
+format_output_df <- function(file_location) {
+  as_tibble(read_rds(file_location)@result) %>%
+    separate_rows(core_enrichment, sep = "/") %>%
+    dplyr::select("ENTREZEGENE_ID" = core_enrichment, Description, ID, setSize, NES, p.adjust, ONTOLOGY)
+}
+
+tibble(histotype = str_remove(list.files(file_location), ".gse.RDS"), 
+  file_location = list.files(file_location, full.names = TRUE)) %>%
+  group_by(histotype) %>%
+  dplyr::mutate(results = map(file_location, format_output_df)) %>%
+  dplyr::select(-file_location) %>%
+  unnest(results) %>%
+  write_tsv("Data/cleaned_pathway_gsea_output.5.25.21.txt")
+```
+
+#Histotype and pathway-specific analysis
+```{r, eval = TRUE}
+#getting list for upset
+chromMAGMA.CCOC.gse.df <- as.data.frame(chromMAGMA.CCOC.gse@result) %>%
+  filter(setSize >= 25)
+chromMAGMA.CCOC.gse.df$GWAS_TYPE <- 'CCOC'
+chromMAGMA.EnOC.gse.df <- as.data.frame(chromMAGMA.EnOC.gse@result)%>%
+  filter(setSize >= 25)
+chromMAGMA.EnOC.gse.df$GWAS_TYPE <- 'EnOC'
+chromMAGMA.HGSOC.gse.df <- as.data.frame(chromMAGMA.HGSOC.gse@result)%>%
+  filter(setSize >= 25)
+chromMAGMA.HGSOC.gse.df$GWAS_TYPE <- 'HGSOC'
+chromMAGMA.LGSOC.gse.df <- as.data.frame(chromMAGMA.LGSOC.gse@result)%>%
+  filter(setSize >= 25)
+chromMAGMA.LGSOC.gse.df$GWAS_TYPE <- 'LGSOC'
+chromMAGMA.MOC.gse.df <- as.data.frame(chromMAGMA.MOC.gse@result)%>%
+  filter(setSize >= 25)
+chromMAGMA.MOC.gse.df$GWAS_TYPE <- 'MOC'
+chromMAGMA.NMOC.gse.df <- as.data.frame(chromMAGMA.NMOC.gse@result)%>%
+  filter(setSize >= 25)
+chromMAGMA.NMOC.gse.df$GWAS_TYPE <- 'NMOC'
+
+#ST4
+ST4 <- rbind(chromMAGMA.CCOC.gse.df,
+      chromMAGMA.EnOC.gse.df,
+      chromMAGMA.HGSOC.gse.df,
+      chromMAGMA.LGSOC.gse.df,
+      chromMAGMA.MOC.gse.df,
+      chromMAGMA.NMOC.gse.df)
+head(ST4)
+
+pathway.list <- list(
+  CCOC = chromMAGMA.CCOC.gse.df$Description,
+  EnOC = chromMAGMA.EnOC.gse.df$Description,
+  HGSOC = chromMAGMA.HGSOC.gse.df$Description,
+  LGSOC = chromMAGMA.LGSOC.gse.df$Description,
+  MOC = chromMAGMA.MOC.gse.df$Description
+)
+
+#upset plot
+library(UpSetR)
+upset(fromList(pathway.list),
+      nsets = length(pathway.list),
+      #$empty.intersections = 'on',
+      order.by ='freq')
+
+#extracting binary results within upset plot
+fromList <- function (input) {
+  # Same as original fromList()...
+  elements <- unique(unlist(input))
+  data <- unlist(lapply(input, function(x) {
+      x <- as.vector(match(elements, x))
+      }))
+  data[is.na(data)] <- as.integer(0)
+  data[data != 0] <- as.integer(1)
+  data <- data.frame(matrix(data, ncol = length(input), byrow = F))
+  data <- data[which(rowSums(data) != 0), ]
+  names(data) <- names(input)
+  # ... Except now it conserves your original value names!
+  row.names(data) <- elements
+  return(data)
+  }
+annotated_pathway <- fromList(pathway.list)
+annotated_pathway$Description <- rownames(annotated_pathway)
+annotated_pathway$binary <-  paste(annotated_pathway$CCOC,
+                            annotated_pathway$EnOC,
+                            annotated_pathway$HGSOC,
+                            annotated_pathway$LGSOC,
+                            annotated_pathway$MOC) 
+
+annotated_pathway$anno <- ifelse(annotated_pathway$binary %in% "1 0 0 0 0",'CCOC Specific',
+                             ifelse(annotated_pathway$binary %in% "0 1 0 0 0",'EnOC Specific',
+                                    ifelse(annotated_pathway$binary %in% "0 0 1 0 0",'HGSOC Specific',
+                                                  ifelse(annotated_pathway$binary %in% "0 0 0 1 0",'LGSOC Specific',
+                                                         ifelse(annotated_pathway$binary %in% "0 0 0 0 1",'MOC Specific',
+                                                                ifelse(annotated_pathway$binary %in% "1 1 1 1 1",'All Common','NA'))))))
+
+annotated_pathway <- annotated_pathway %>% filter(!anno == 'NA')
+annotated_pathway<- annotated_pathway[order(annotated_pathway$anno),]
+
+
+
+#dotplot
+transcription <- annotated_pathway %>%
+  filter(anno == 'All Common') %>%
+    filter(str_detect(Description,"transcription"))
+
+splicing <- annotated_pathway %>%
+  filter(anno == 'All Common') %>%
+     filter(str_detect(Description,"splic"))
+
+chromatin <- annotated_pathway %>%
+  filter(anno == 'All Common') %>%
+     filter(str_detect(Description,"chromatin"))
+dotpot_Des <- rbind(transcription,splicing,chromatin)
+
+all_pathway <- rbind(as.data.frame(chromMAGMA.CCOC.gse@result) %>% mutate(histotype = 'CCOC'),
+                     as.data.frame(chromMAGMA.EnOC.gse@result) %>% mutate(histotype = 'EnOC'),
+                     as.data.frame(chromMAGMA.HGSOC.gse@result) %>% mutate(histotype = 'HGSOC'),
+                     as.data.frame(chromMAGMA.LGSOC.gse@result) %>% mutate(histotype = 'LGSOC'),
+                     as.data.frame(chromMAGMA.MOC.gse@result) %>% mutate(histotype = 'MOC')
+      ) %>%
+dplyr::select(histotype,Description, p.adjust,NES) %>%
+mutate(NEG_LOG10P = -log10(p.adjust)) %>%
+filter(Description %in% dotpot_Des$Description) %>%
+group_by(histotype) %>%
+dplyr::select(histotype,Description,NEG_LOG10P, NES)
+
+ggplot(all_pathway,aes(factor(histotype),Description)) + 
+  geom_point(aes(colour=NEG_LOG10P,size=NES)) + 
+  scale_colour_gradient(low="blue", high="red") + 
+  theme_bw() + 
+  theme(axis.text=element_text(size=7), 
+        axis.title=element_text(size=7,face="bold")) + 
+  theme(axis.text.x = element_text(size = 12, angle = 90)) + 
+  scale_size_continuous(range = c(0,6))
+```
+
+#Figure 3b
+```{r,eval = TRUE, fig.width=10,fig.height=11}
+CCOC_enriched <- annotated_pathway %>%
+  filter(anno == 'CCOC Specific')
+chromMAGMA.CCOC.enriched <- chromMAGMA.CCOC.gse.df %>%
+  filter(Description %in% CCOC_enriched$Description) %>%
+  mutate(NEG_LOG10_P = -log10(p.adjust)) %>% 
+  top_n(10, NES)
+chromMAGMA.CCOC.enriched$Description <- str_trunc(chromMAGMA.CCOC.enriched$Description, 50) 
+chromMAGMA.CCOC.enriched$Description <- factor(chromMAGMA.CCOC.enriched$Description, levels=chromMAGMA.CCOC.enriched[order(chromMAGMA.CCOC.enriched$NEG_LOG10_P,decreasing=T),]$Description)
+
+CCOC.plot <- ggplot(chromMAGMA.CCOC.enriched,aes(x = NEG_LOG10_P,
+                                                 y = Description)) + 
+  geom_col(fill = 'red') +
+  coord_flip()+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(axis.title.x=element_blank(),
+        axis.title.y=element_blank()) +
+  xlim(0,2.5)
+
+#EnOC
+EnOC_enriched <- annotated_pathway %>%
+  filter(anno == 'EnOC Specific')
+chromMAGMA.EnOC.enriched <- chromMAGMA.EnOC.gse.df %>%
+  filter(Description %in% EnOC_enriched$Description) %>%
+  mutate(NEG_LOG10_P = -log10(p.adjust)) %>% 
+  top_n(10, NES) 
+chromMAGMA.EnOC.enriched$Description <- str_trunc(chromMAGMA.EnOC.enriched $Description, 50) 
+chromMAGMA.EnOC.enriched$Description <- factor(chromMAGMA.EnOC.enriched $Description, levels=chromMAGMA.EnOC.enriched[order(chromMAGMA.EnOC.enriched $NEG_LOG10_P,decreasing=T),]$Description)
+
+EnOC.plot <- ggplot(chromMAGMA.EnOC.enriched ,
+                    aes(x = NEG_LOG10_P,
+                        y = Description)) + 
+  geom_col(fill = 'blue')+
+  coord_flip()+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  theme(axis.title.x=element_blank(),
+        axis.title.y=element_blank())+
+  xlim(0,2.5)
+
+#HGSOC
+HGSOC_enriched <- annotated_pathway %>%
+  filter(anno == 'HGSOC Specific')
+chromMAGMA.HGSOC.enriched <- chromMAGMA.HGSOC.gse.df %>%
+  filter(Description %in% HGSOC_enriched$Description) %>%
+  mutate(NEG_LOG10_P = -log10(p.adjust)) %>% 
+  top_n(10, NES)
+chromMAGMA.HGSOC.enriched$Description <- str_trunc(chromMAGMA.HGSOC.enriched$Description, 50) 
+chromMAGMA.HGSOC.enriched$Description <- factor(chromMAGMA.HGSOC.enriched$Description, levels=chromMAGMA.HGSOC.enriched[order(chromMAGMA.HGSOC.enriched$NEG_LOG10_P,decreasing=T),]$Description)
+
+HGSOC.plot <- ggplot(chromMAGMA.HGSOC.enriched,
+                      aes(x = NEG_LOG10_P, 
+                          y = Description)) +
+  geom_col(fill = 'green') +
+  coord_flip() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  theme(axis.title.x=element_blank(),
+        axis.title.y=element_blank())+
+  xlim(0,2.5)
+#LGSOC
+LGSOC_enriched <- annotated_pathway %>%
+  filter(anno == 'LGSOC Specific')
+chromMAGMA.LGSOC.enriched <- chromMAGMA.LGSOC.gse.df %>%
+  filter(Description %in% LGSOC_enriched$Description) %>%
+  mutate(NEG_LOG10_P = -log10(p.adjust)) %>% 
+  top_n(10, NES)
+chromMAGMA.LGSOC.enriched$Description <- str_trunc(chromMAGMA.LGSOC.enriched$Description, 50) 
+chromMAGMA.LGSOC.enriched <- chromMAGMA.LGSOC.enriched %>%
+  distinct(Description, .keep_all = TRUE)
+
+chromMAGMA.LGSOC.enriched$Description <- factor(chromMAGMA.LGSOC.enriched$Description, levels=chromMAGMA.LGSOC.enriched[order(chromMAGMA.LGSOC.enriched$NEG_LOG10_P,decreasing=T),]$Description)
+
+LGSOC.plot <- ggplot(chromMAGMA.LGSOC.enriched,
+                     aes(x = NEG_LOG10_P,
+                         y = Description)) + 
+  geom_col(fill = 'orange')+
+  coord_flip()+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  theme(axis.title.x=element_blank(),
+        axis.title.y=element_blank())+
+  xlim(0,2.5)
+
+#MOC
+MOC_enriched <- annotated_pathway %>%
+  filter(anno == 'MOC Specific')
+chromMAGMA.MOC.enriched <- chromMAGMA.MOC.gse.df %>%
+  filter(Description %in% MOC_enriched$Description) %>%
+  mutate(NEG_LOG10_P = -log10(p.adjust)) %>% 
+  top_n(10, NES)
+chromMAGMA.MOC.enriched$Description <- str_trunc(chromMAGMA.MOC.enriched$Description, 50) 
+chromMAGMA.MOC.enriched$Description <- factor(chromMAGMA.MOC.enriched$Description, levels=chromMAGMA.MOC.enriched[order(chromMAGMA.MOC.enriched$NEG_LOG10_P,decreasing=T),]$Description)
+
+MOC.plot <- ggplot(chromMAGMA.MOC.enriched,
+                   aes(x = NEG_LOG10_P,
+                       y = Description)) + 
+  geom_bar(stat="identity", fill = 'purple')+
+  coord_flip()+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(axis.title.x=element_blank(),
+        axis.title.y=element_blank())+
+  xlim(0,2.5)
+
+ggarrange(CCOC.plot,
+          EnOC.plot,
+          HGSOC.plot,
+          LGSOC.plot,
+          MOC.plot,
+          ncol = 5,
+          nrow = 1)
+```
+
+
+```{r,include = FALSE}
+## Descriptive Statistics of chromMAGMA Pathway Analysis
+df <- read.table('Data/cleaned_pathway_gsea_output.5.25.21.txt', sep = '\t', header = TRUE, quote = "")
+df <- df %>%
+  dplyr::rename(entrezgene_id = ENTREZEGENE_ID) %>%
+  filter(NES > 0)
+df.symbol <- merge(df,bm.unique_external_gene_name,by = 'entrezgene_id', all.x = TRUE)
+
+df.symbol.CCOC <- df.symbol %>%
+  filter(histotype == 'CCOC') %>%
+  distinct(Description, .keep_all = TRUE)
+
+df.symbol.EnOC <- df.symbol %>%
+  filter(histotype == 'EnOC') %>%
+  distinct(Description, .keep_all = TRUE)
+
+df.symbol.HGSOC <- df.symbol %>%
+  filter(histotype == 'HGSOC') %>%
+  distinct(Description, .keep_all = TRUE)
+
+df.symbol.LGSOC <- df.symbol %>%
+  filter(histotype == 'LGSOC') %>%
+  distinct(Description, .keep_all = TRUE)
+
+df.symbol.MOC <- df.symbol %>%
+  filter(histotype == 'MOC') %>%
+  distinct(Description, .keep_all = TRUE)
+
+df.symbol.NMOC <- df.symbol %>%
+  filter(histotype == 'NMOC') %>%
+  distinct(Description, .keep_all = TRUE)
+
+df.symbol.list <- c('df.symbol.CCOC','df.symbol.EnOC','df.symbol.HGSOC','df.symbol.LGSOC','df.symbol.MOC','df.symbol.NMOC')
+
+#Upset
+df.upset <- list(
+  CCOC = df.symbol.CCOC$Description,
+  EnOC = df.symbol.EnOC$Description,
+  HGSOC = df.symbol.HGSOC$Description,
+  LGSOC = df.symbol.LGSOC$Description,
+  MOC = df.symbol.MOC$Description,
+  NMOC = df.symbol.NMOC$Description
+)
+
+plot <- upset(fromList(df.upset), nsets = length(df.upset), 
+              empty.intersections = "on", 
+              order.by = "freq", 
+              point.size = 3.5, 
+              text.scale = 1.5,
+              line.size = 2)
+#finding common pathways
+df.inner <- inner_join(df.symbol.CCOC, df.symbol.EnOC, by='Description') %>%
+  inner_join(.,df.symbol.HGSOC, by='Description') %>%
+  inner_join(.,df.symbol.LGSOC, by='Description')%>%
+  inner_join(.,df.symbol.MOC, by='Description')%>%
+  inner_join(.,df.symbol.NMOC, by='Description')
+length(unique(df.inner$Description))
+```
+
+## Getting more info on what pathways are common 
+```{r, include = FALSE}
+## Finding Genes involved in Splicing
+df.acrosshistotypes <- df.symbol[df.symbol$Description %in% df.inner$Description,] 
+##All Splice
+splicing <- df.acrosshistotypes %>%
+filter(str_detect(Description,'splic'))
+splicing <- splicing %>%
+  distinct(Description, .keep_all = TRUE) 
+
+splicing.genes <- df.acrosshistotypes %>%
+  filter(str_detect(Description,'splic')) %>%
+  distinct(external_gene_name, .keep_all = TRUE) %>%
+  dplyr::select(ensembl_gene_id,external_gene_name,ID,Description)
+splicing.genes$gene_biotype <- 'splicing.genes'
+
+## all transcription
+transcription <- df.acrosshistotypes %>%
+filter(str_detect(Description,'transcription factor'))
+transcription <- transcription %>%
+  distinct(Description, .keep_all = TRUE) 
+
+transcription.genes <- df.acrosshistotypes %>%
+  filter(str_detect(Description,'transcription')) %>%
+  distinct(external_gene_name, .keep_all = TRUE) %>%
+  dplyr::select(ensembl_gene_id,external_gene_name,ID,Description)
+transcription.genes$gene_biotype <- 'transcription.genes'
+
+splicing_transcription_pathway_genes_common_all_histotypes <- rbind(splicing.genes,transcription.genes)
+
+## chromatin?
+chromatin <- df.acrosshistotypes %>%
+filter(str_detect(Description,'chromatin'))
+chromatin <- chromatin %>%
+  distinct(Description, .keep_all = TRUE) 
+
+chromatin.genes <- df.acrosshistotypes %>%
+  filter(str_detect(Description,'chromatin')) %>%
+  distinct(external_gene_name, .keep_all = TRUE) %>%
+  dplyr::select(ensembl_gene_id,external_gene_name,ID,Description)
+chromatin.genes$gene_biotype <- 'chromatin.genes'
+
+## cell cycle?
+cycle <- df.acrosshistotypes %>%
+filter(str_detect(Description,'cycle'))
+cycle <- cycle %>%
+  distinct(Description, .keep_all = TRUE) 
+
+cycle.genes <- df.acrosshistotypes %>%
+  filter(str_detect(Description,'cycle')) %>%
+  distinct(external_gene_name, .keep_all = TRUE) %>%
+  dplyr::select(ensembl_gene_id,external_gene_name,ID,Description)
+cycle.genes$gene_biotype <- 'cycle.genes'
+
+```
+
+
+```{r, include = FALSE}
+## Figure 2D chromMAGMA GSEA Dotplots
+pathway_list <- as.list(
+df.inner %>%
+  filter(str_detect(Description,c('transcription factor','mRNA'))) %>%
+  dplyr::select(Description))
+
+
+all_pathway <- rbind(as.data.frame(chromMAGMA.CCOC.gse@result) %>% mutate(histotype = 'CCOC'),
+                     as.data.frame(chromMAGMA.EnOC.gse@result) %>% mutate(histotype = 'EnOC'),
+                     as.data.frame(chromMAGMA.HGSOC.gse@result) %>% mutate(histotype = 'HGSOC'),
+                     as.data.frame(chromMAGMA.LGSOC.gse@result) %>% mutate(histotype = 'LGSOC'),
+                     as.data.frame(chromMAGMA.MOC.gse@result) %>% mutate(histotype = 'MOC'),
+                     as.data.frame(chromMAGMA.NMOC.gse@result) %>% mutate(histotype = 'NMOC')
+      ) %>%
+dplyr::select(histotype,Description, p.adjust,NES) %>%
+mutate(NEG_LOG10P = -log10(p.adjust)) %>%
+group_by(histotype) %>%
+filter(str_detect(Description,"transcription factor|splicing")) %>%
+dplyr::select(histotype,Description,NEG_LOG10P, NES)
+
+
+
+ggplot(all_pathway,aes(factor(histotype),Description)) + 
+  geom_point(aes(colour=NEG_LOG10P,size=NES)) + 
+  scale_colour_gradient(low="blue", high="red") + 
+  scale_size() + 
+  theme_bw() + 
+  theme(axis.text=element_text(size=7), 
+        axis.title=element_text(size=7,face="bold")) + 
+  theme(axis.text.x = element_text(size = 12, angle = 90))
+```
+
+
+```{r,include = FALSE}
+#Making plots showing where the splicing genes in pathway are ranked in chromMAGMA
+gene_level_weighted <- read_gene_level_weighted()
+
+transcription.genes.path <- transcription.genes %>%
+  filter(Description == 'transcription factor binding')
+list <- data.frame(GENES = c('ABLIM3',
+'ACTN1',
+'AHCYL1',
+'ALCAM',
+'ATP1B4',
+'ATP5MC1',
+'BDNF',
+'BEND4',
+'BHLHE22',
+'BNC2',
+'CALD1',
+'CAMK1D',
+'CCDC24',
+'CFAP20',
+'CLTC',
+'CNTN6',
+'DIO2',
+'DLG2',
+'DNAI1',
+'ELK4',
+'ELMO3',
+'EML1',
+'FAM172A',
+'FAM219A',
+'FAM71F1',
+'FEZF2',
+'GABRA1',
+'GABRG2',
+'GGN',
+'GPC4',
+'GPR27',
+'HIVEP1',
+'HNRNPA0',
+'HOXA9',
+'HOXB4',
+'HOXB5',
+'HOXB7',
+'HOXB8',
+'HOXD12',
+'HOXD8',
+'HPN',
+'HR',
+'IARS1',
+'IGSF22',
+'JMJD1C',
+'KCNQ1DN',
+'KLHL13',
+'LHFPL1',
+'LRMDA',
+'LRRC74A',
+'LUC7L3',
+'MAN1C1',
+'MAP2K5',
+'MARCHF1',
+'METTL26',
+'MNT',
+'MYBPC1',
+'MYF5',
+'NABP2',
+'NECAB3',
+'NEUROD6',
+'NEUROG1',
+'NOL4',
+'NPM3',
+'NR1D1',
+'NRG1',
+'NRGN',
+'OLFM2',
+'OSBPL7',
+'PAK1IP1',
+'PAPPA',
+'PDZD7',
+'PIK3R3',
+'POU4F3',
+'PPM1A',
+'PPP2R2B',
+'PTCH1',
+'PUM2',
+'PURA',
+'RARB',
+'RBM39',
+'RELCH',
+'RERG',
+'RGS12',
+'RHOBTB1',
+'RHOQ',
+'RNF220',
+'SH3GL3',
+'SLC25A28',
+'SP6',
+'SRPK2',
+'SUPT16H',
+'TAF5',
+'TANK',
+'TCF7L2',
+'TEK',
+'TIA1',
+'TIAF1',
+'TMEM255A',
+'TMTC2',
+'TRERF1',
+'TSHZ2',
+'TSPAN2',
+'TWIST1',
+'WNT4',
+'ZNF385B'))
+
+list <- data.frame(GENES = c('HOXB5',
+'HOXB7',
+'HOXB8',
+'LUC7L3',
+'MAP2K5',
+'NEUROD6',
+'RBM39',
+'SRPK2'))
+gene_level_weighted %>%
+  group_by(GWAS_TYPE) %>%
+  mutate(rank_weighted_P = min_rank(-weighted_P)) %>%
+  filter(GWAS_TYPE == 'NMOC') %>%
+  filter(FEATURE == c('chromMAGMA')) %>%
+  {ggplot(., aes(x = rank_weighted_P, y = weighted_P)) + 
+      geom_line() + 
+      #geom_hline(yintercept = c(-1.96, 1.96), alpha = 0.3, linetype = "dashed") +
+      #geom_point(data = filter(., hgnc_symbol %in% list$GENES), colour = "black", size = 2) +
+      geom_point(data = filter(., external_gene_name %in% list$GENES), colour = "#4AAE42", size = 3) +  
+      ggrepel::geom_text_repel(data = filter(., external_gene_name %in% list$GENES), 
+                               aes(label = external_gene_name), 
+                               max.overlaps = 20,
+                               size = 3,
+                               seed= 100) +
+      facet_grid(rows = vars(FEATURE), cols = vars(GWAS_TYPE)) +
+      xlab("-log10(weighted_Pvalue) Rank") + ylab("-log10(Weighted_Pvalue)") +
+      #ggtitle("Ranked Z-score for Selected Genes", subtitle = "Gene-Centric Analysis") +
+      scale_color_brewer(palette = "Dark2") +
+      theme_minimal()
+  }
+
+```

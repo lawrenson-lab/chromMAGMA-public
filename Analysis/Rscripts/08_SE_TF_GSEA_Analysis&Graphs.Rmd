@@ -1,0 +1,233 @@
+---
+title: "08 Super-Enhancer Associated Transcription Graphs"
+output: html_document
+---
+*Robbin Nameki, Anamay Shetty et al.*
+*August 2021*
+
+# Introduction
+This document is for the visualization (Figure 3A and 3B) of the Super-enhancer associated transcription factor GSEA analysis. Although BROAD GSEA was used for the analysis, the package fgsea was used for the enrichment plot visualization. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Sourcecode
+```{r,eval = TRUE}
+source('Rscripts/Utils.R')
+```
+
+## Libraries
+```{r, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(fgsea)
+library(ggpubr)
+```
+
+## Gene-Set 
+The gene-set in this analysis are super-enhancer associated genes from Corona et al. 2020
+```{r, eval = TRUE}
+geneset <- read.table('Data/SuperEnhancer_TFs.txt', sep = '\t', header = TRUE)
+
+geneset_nested <- geneset %>%
+  group_by(histotype)  %>%
+  split(f = as.factor(.$histotype))
+
+```
+
+## Making GSEA Plots chromMAGMA
+```{r,eval = TRUE}
+#Making nested dataframe chromMAGMA
+gene_file <- read_gene_level_weighted()
+
+gene_file_nested <- gene_file %>%
+  filter(FEATURE == 'chromMAGMA') %>%
+  dplyr::select(GWAS_TYPE,external_gene_name,weighted_P) %>%
+  group_by(GWAS_TYPE)  %>%
+  split(f = as.factor(.$GWAS_TYPE))
+
+#naming weighted_P chromMAGMA
+names(gene_file_nested$CCOC$weighted_P) <- gene_file_nested$CCOC$external_gene_name
+names(gene_file_nested$EnOC$weighted_P) <- gene_file_nested$EnOC$external_gene_name
+names(gene_file_nested$HGSOC$weighted_P) <- gene_file_nested$HGSOC$external_gene_name
+names(gene_file_nested$LGSOC$weighted_P) <- gene_file_nested$LGSOC$external_gene_name
+names(gene_file_nested$MOC$weighted_P) <- gene_file_nested$MOC$external_gene_name
+names(gene_file_nested$NMOC$weighted_P) <- gene_file_nested$NMOC$external_gene_name
+
+chromMAGMA.CCOC <- plotEnrichment(geneset_nested$CCOC$OVERLAP_PROXIMAL_CLOSEST_GENES,gene_file_nested$CCOC$weighted_P) + 
+  labs(title="") +
+  labs(title="CCOC") +
+  geom_line(color="red")
+
+chromMAGMA.EnOC <- plotEnrichment(geneset_nested$EnOC$OVERLAP_PROXIMAL_CLOSEST_GENES,gene_file_nested$EnOC$weighted_P) + 
+  labs(title="") +
+  labs(title="EnOC") +
+  geom_line(color="blue")
+
+chromMAGMA.HGSOC <- plotEnrichment(geneset_nested$HGSOC$OVERLAP_PROXIMAL_CLOSEST_GENES,gene_file_nested$HGSOC$weighted_P) + 
+  labs(title="") +
+  labs(title="HGSOC") +
+  geom_line(color="green")
+
+chromMAGMA.MOC <- plotEnrichment(geneset_nested$MOC$OVERLAP_PROXIMAL_CLOSEST_GENES,gene_file_nested$MOC$weighted_P) + 
+  labs(title="") +
+  labs(title="MOC") +
+  geom_line(color="purple")
+
+```
+
+## Making GSEA Plots MAGMA
+```{r,eval = TRUE}
+gene_file_MAGMA <- read_gene_level()
+#Making nested dataframe MAGMA
+gene_file_nested_MAGMA <- gene_file_MAGMA %>%
+  filter(FEATURE == 'MAGMA') %>%
+  dplyr::select(GWAS_TYPE,external_gene_name,NEG_LOG10P) %>%
+  group_by(GWAS_TYPE)  %>%
+  split(f = as.factor(.$GWAS_TYPE))
+
+#naming NEG_LOG10P MAGMA
+names(gene_file_nested_MAGMA$CCOC$NEG_LOG10P) <- gene_file_nested_MAGMA$CCOC$external_gene_name
+names(gene_file_nested_MAGMA$EnOC$NEG_LOG10P) <- gene_file_nested_MAGMA$EnOC$external_gene_name
+names(gene_file_nested_MAGMA$HGSOC$NEG_LOG10P) <- gene_file_nested_MAGMA$HGSOC$external_gene_name
+names(gene_file_nested_MAGMA$LGSOC$NEG_LOG10P) <- gene_file_nested_MAGMA$LGSOC$external_gene_name
+names(gene_file_nested_MAGMA$MOC$NEG_LOG10P) <- gene_file_nested_MAGMA$MOC$external_gene_name
+names(gene_file_nested_MAGMA$NMOC$NEG_LOG10P) <- gene_file_nested_MAGMA$NMOC$external_gene_name
+
+MAGMA.CCOC <- plotEnrichment(geneset_nested$CCOC$OVERLAP_PROXIMAL_CLOSEST_GENES,gene_file_nested_MAGMA$CCOC$NEG_LOG10P) + 
+  labs(title="") +
+  labs(title="CCOC") +
+  geom_line(color="red")
+
+MAGMA.EnOC <- plotEnrichment(geneset_nested$EnOC$OVERLAP_PROXIMAL_CLOSEST_GENES,gene_file_nested_MAGMA$EnOC$NEG_LOG10P) + 
+  labs(title="") +
+  labs(title="EnOC") +
+  geom_line(color="blue")
+
+MAGMA.HGSOC <- plotEnrichment(geneset_nested$HGSOC$OVERLAP_PROXIMAL_CLOSEST_GENES,gene_file_nested_MAGMA$HGSOC$NEG_LOG10P) + 
+  labs(title="") +
+  labs(title="HGSOC") +
+  geom_line(color="green")
+
+MAGMA.MOC <- plotEnrichment(geneset_nested$MOC$OVERLAP_PROXIMAL_CLOSEST_GENES,gene_file_nested_MAGMA$MOC$NEG_LOG10P) + 
+  labs(title="") +
+  labs(title="MOC") +
+  geom_line(color="purple")
+```
+## Putting together all the enrichment plots 
+```{r,eval = TRUE}
+ggarrange(
+  chromMAGMA.CCOC, 
+  chromMAGMA.EnOC, 
+  chromMAGMA.HGSOC,
+  chromMAGMA.MOC,
+    MAGMA.CCOC, 
+    MAGMA.EnOC,
+    MAGMA.HGSOC,
+    MAGMA.MOC,
+  ncol = 4,
+  nrow = 2
+)
+```
+## Leading Edge Genes and Plotting
+The following segments extracts the genes on the leading edge of the BROAD GSEA analysis from 07.5 and plots their ranking on the chromMAGMA gene-list
+
+### Extracting Leading Edge Genes
+This generates supplementary table 5
+```{r,eval = TRUE}
+myTF.CCOC.top10 <- read.delim('Data/SE_TF_LeadingEdge_Genes/CCOC_SUPERENHANCERS.xls')
+myTF.CCOC.top10 <- myTF.CCOC.top10 %>%
+  filter(CORE.ENRICHMENT == 'Yes') %>%
+  dplyr::rename(gene_id = PROBE)
+myTF.CCOC.top10$GWAS_TYPE <- 'clearcell'
+
+myTF.EnOC.top10 <- read.delim('Data/SE_TF_LeadingEdge_Genes/ENOC_SUPERENHANCERS.xls')
+myTF.EnOC.top10 <- myTF.EnOC.top10 %>%
+  filter(CORE.ENRICHMENT == 'Yes') %>%
+  dplyr::rename(gene_id = PROBE)
+myTF.EnOC.top10$GWAS_TYPE <- 'endometrioid'
+
+myTF.HGSOC.top10 <- read.delim('Data/SE_TF_LeadingEdge_Genes/HGSOC_SUPERENHANCERS.xls')
+myTF.HGSOC.top10 <- myTF.HGSOC.top10 %>%
+  filter(CORE.ENRICHMENT == 'Yes') %>%
+  dplyr::rename(gene_id = PROBE)
+myTF.HGSOC.top10$GWAS_TYPE <- 'serous_hg_extra'
+
+myTF.MOC.top10 <- read.delim('Data/SE_TF_LeadingEdge_Genes/MOC_SUPERENHANCERS.xls')
+myTF.MOC.top10 <- myTF.MOC.top10 %>%
+  filter(CORE.ENRICHMENT == 'Yes') %>%
+  dplyr::rename(gene_id = PROBE)
+myTF.MOC.top10$GWAS_TYPE <- 'mucinous_all'
+
+LE_list <- rbind(myTF.CCOC.top10[,c(2,5,6,7,10)],
+                 myTF.EnOC.top10[,c(2,5,6,7,10)],
+                 myTF.HGSOC.top10[,c(2,5,6,7,10)],
+                 myTF.MOC.top10[,c(2,5,6,7,10)])
+head(LE_list)
+
+#will be used in later analysis
+#saveRDS(x = LE_list, file = 'Data/se_tf_le_list.rds')
+```
+
+
+## Leading-Edge plot
+Plot showing the ranking of known super-enhancer associated, lineage-specifying transcription factors on the leading edge of the BROAD GSEA analsis relative to gene-list ranking.
+```{r, eval = TRUE}
+list <- data.frame(GENES = c('WT1','SOX17','PAX8','ESR1','MECOM','NR2F6'))
+ccoclist <- data.frame(GENES = c('HNF1B'))
+#enoclist <- data.frame(GENES = c('MYC','HIF1A','ESR1','SOX17','RXRA',''))
+#moclist <- data.frame(GENES = c('ONECUT2','MYRF'))
+
+
+hgsocprimarytissueplot <- gene_file %>%
+  group_by(GWAS_TYPE) %>%
+  mutate(rank_weighted_P = min_rank(-weighted_P)) %>%
+  filter(GWAS_TYPE == 'HGSOC') %>%
+  filter(FEATURE == c('chromMAGMA')) %>%
+  {ggplot(., aes(x = rank_weighted_P, y = weighted_P)) + 
+      geom_line() + 
+      #geom_hline(yintercept = c(-1.96, 1.96), alpha = 0.3, linetype = "dashed") +
+      #geom_point(data = filter(., hgnc_symbol %in% list$GENES), colour = "black", size = 2) +
+      geom_point(data = filter(., external_gene_name %in% list$GENES), colour = "#4AAE42", size = 3) +  
+      ggrepel::geom_text_repel(data = filter(., external_gene_name %in% list$GENES), 
+                               aes(label = external_gene_name), 
+                               max.overlaps = 20,
+                               size = 3,
+                               seed= 100) +
+      facet_grid(rows = vars(FEATURE), cols = vars(GWAS_TYPE)) +
+      xlab("-log10(weighted_Pvalue) Rank") + ylab("-log10(Weighted_Pvalue)") +
+      #ggtitle("Ranked Z-score for Selected Genes", subtitle = "Gene-Centric Analysis") +
+      scale_color_brewer(palette = "Dark2") +
+      theme_minimal()
+  }
+
+ccocprimarytissueplot <- gene_file %>%
+  group_by(GWAS_TYPE) %>%
+  mutate(rank_weighted_P = min_rank(-weighted_P)) %>%
+  filter(GWAS_TYPE == 'CCOC') %>%
+  filter(FEATURE == c('chromMAGMA')) %>%
+  {ggplot(., aes(x = rank_weighted_P, y = weighted_P)) + 
+      geom_line() + 
+      #geom_hline(yintercept = c(-1.96, 1.96), alpha = 0.3, linetype = "dashed") +
+      #geom_point(data = filter(., hgnc_symbol %in% list$GENES), colour = "black", size = 2) +
+      geom_point(data = filter(., external_gene_name %in% ccoclist$GENES), colour = "#E61B1C", size = 3) +  
+      ggrepel::geom_text_repel(data = filter(., external_gene_name %in% ccoclist$GENES), 
+                               aes(label = external_gene_name), 
+                               max.overlaps = 20,
+                               size = 3,
+                               seed= 100) +
+      facet_grid(rows = vars(FEATURE), cols = vars(GWAS_TYPE)) +
+      xlab("-log10(weighted_Pvalue) Rank") + ylab("-log10(Weighted_Pvalue)") +
+      #ggtitle("Ranked Z-score for Selected Genes", subtitle = "Gene-Centric Analysis") +
+      scale_color_brewer(palette = "Dark2") +
+      theme_minimal()
+  }
+
+
+ggarrange(
+  hgsocprimarytissueplot,
+  ccocprimarytissueplot
+)
+```
+
+

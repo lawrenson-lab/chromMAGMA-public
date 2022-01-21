@@ -1,0 +1,62 @@
+---
+title: "gsea_geneset_preparation"
+author: "Anamay Shetty"
+date: "19/08/2021"
+output: html_document
+---
+```{r}
+library(tidyverse)
+```
+
+This document shows how the 4 genesets (MSigDB, legacy MSigDB, BJC and superenhancer) were created
+
+#### MSIgDB
+
+```{bash}
+curl http://www.gsea-msigdb.org/gsea/msigdb/download_file.jsp?filePath=/msigdb/release/7.4/c3.tft.gtrd.v7.4.symbols.gmt > Analysis/Data/c3.tft.gtrd.v7.4.symbols.gmt
+```
+
+
+#### MSigDB legacy
+
+```{bash}
+
+curl http://www.gsea-msigdb.org/gsea/msigdb/download_file.jsp?filePath=/msigdb/release/7.4/c3.tft.tft_legacy.v7.4.symbols.gmt > Analysis/Data/c3.tft.gtrd.v7.4.symbols.gmt
+
+```
+
+
+#### BJC
+
+```{r}
+# Formatting gene set lists ----
+bjc_df <- read_tsv("Analysis/Data/157_PAX8_Pathway_Geneset_BJC_2017.txt", col_names = FALSE)
+bjc_pax8 <- c(bjc_df$X1[1], "NA", bjc_df$X1[seq(2, length(bjc_df$X1))])
+# This create BJC geneset
+write(
+  reduce(bjc_pax8, paste, sep = "\t"), 
+  "Analysis/Data/157_pax8_pathway_BJC_2017.gmt" 
+  )
+
+
+```
+
+#### Superenhancers
+
+```{r}
+
+# This creates the superenhancer geneset
+read_tsv("Analysis/Data/SuperEnhancer_TFs.txt") %>%
+  group_by(histotype) %>%
+  nest() %>%
+  # This extracts the list of genes
+  mutate(output = map(data, ~.$OVERLAP_PROXIMAL_CLOSEST_GENES)) %>%
+  # This adds the labelling column
+  mutate(output = map2(histotype, output, ~c(paste0(.x, "_SUPERENHANCERS"), "NA", .y))) %>%
+  # This condenses the 
+  mutate(output = map(output, reduce, paste, sep = "\t")) %>%
+  .$output %>%
+  lapply(write, "Analysis/Data/robbin_superenancer.gmt", append = TRUE, sep = "\n")
+
+```
+

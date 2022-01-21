@@ -1,0 +1,375 @@
+---
+title: "09 Cleaning legacy transcription factor MsigDB BROAD GSEA results - Supplementary Table 6"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(biomaRt)
+library(reshape2)
+library(ggplot2)
+```
+## Sourcecode
+```{r,eval = TRUE}
+source('Rscripts/Utils.R')
+```
+
+
+```{r, include = FALSE}
+### 157 PAX8 Pathway
+##PAX8 <- read.table('/media/Data02/shettya/data_v1.08/allchrs/gsea_output_files/weighted_analysis/formatted_tables/siddhartha_pax8.weighted_pval#.#190421.txt', sep = '\t',header = TRUE)
+```
+
+## Cleaning tft_legacy MsigDB geneset names 
+This is necessary in order to make the gene identifiers the same across the analysis
+```{r,eval = TRUE}
+#getting data that cleans gene names
+ensembl.hg19 <- useEnsembl_GRCh37()
+bm.hg19 <- getBM(attributes = c('ensembl_gene_id', 
+                                'external_gene_name',
+                                'hgnc_symbol',
+                                'external_synonym',
+                                'gene_biotype'), 
+                 mart = ensembl.hg19, 
+                 filters = 'chromosome_name', values = c(1:22,'X'))
+bm.hg19.prot <- bm.hg19 %>%
+  filter(gene_biotype == 'protein_coding')
+
+ensembl_IDs <- melt(bm.hg19.prot, id = 1) %>%
+  dplyr::rename(GENE = value)
+
+#Adding ensembl annotation to TFs (TF list from Lambert et al.)
+load(file = 'Data/merged-list-TFs.Rdata') 
+tf_list <- merge(merged.list %>% dplyr::rename(GENE = NameTF), 
+                 ensembl_IDs, 
+                 by = 'GENE') 
+
+##Cleaning MsigDB
+tft_legacy <- getting_MsigDB_TF() 
+tft_legacy_curated <- tft_legacy %>%
+  #dplyr::filter(!str_detect(NAME, 'UNKNOWN')) %>%
+  dplyr::mutate(GENE = sub("_.*", "", NAME)) 
+#Have to manually re-name these as they are protein nomenclature
+tft_legacy_curated$GENE <- str_replace(tft_legacy_curated$GENE,
+                                      "ER",
+                                      "ESR1") 
+tft_legacy_curated$GENE <- str_replace(tft_legacy_curated$GENE,
+                                      "EVI1",
+                                      "MECOM") 
+tft_legacy_curated$GENE <- str_replace(tft_legacy_curated$GENE,
+                                      "ARP1",
+                                      "ACTR1A") 
+tft_legacy_curated$GENE <- str_replace(tft_legacy_curated$GENE,
+                                      "CART1",
+                                      "ALX1") 
+tft_legacy_curated$GENE <- str_replace(tft_legacy_curated$GENE,
+                                      "DR3",
+                                      "TNFRSF25")   
+tft_legacy_curated$GENE <- str_replace(tft_legacy_curated$GENE,
+                                      "DR4",
+                                      "TNFRSF10A")  
+tft_legacy_curated$GENE <- str_replace(tft_legacy_curated$GENE,
+                                      "E12",
+                                      "TCF3")
+tft_legacy_curated$GENE <- str_replace(tft_legacy_curated$GENE,
+                                      "HIF1",
+                                      "HIF1A")
+tft_legacy_curated$GENE <- str_replace(tft_legacy_curated$GENE,
+                                      "OCT1",
+                                      "POU2F1")
+tft_legacy_curated$GENE <- str_replace(tft_legacy_curated$GENE,
+                                      "OSF2",
+                                      "POSTN")
+tft_legacy_curated$GENE <- str_replace(tft_legacy_curated$GENE,
+                                      "P300",
+                                      "EP300")
+tft_legacy_curated$GENE <- str_replace(tft_legacy_curated$GENE,
+                                      "PIT1",
+                                      "POU1F1")
+tft_legacy_curated$GENE <- str_replace(tft_legacy_curated$GENE,
+                                      "PR",
+                                      "PGR")
+tft_legacy_curated$GENE <- str_replace(tft_legacy_curated$GENE,
+                                      "S8",
+                                      "RPS8")
+tft_legacy_curated$GENE <- str_replace(tft_legacy_curated$GENE,
+                                      "TEL2",
+                                      "TELO2")
+tft_legacy_curated$GENE <- str_replace(tft_legacy_curated$GENE,
+                                      "TFIIA",
+                                      "GTF2A1")
+
+
+cleaned_tf_legacy <- merge(tft_legacy_curated,
+                            ensembl_IDs,
+                            by = 'GENE') 
+NAs <- merge(tft_legacy_curated,
+             ensembl_IDs,
+             by = 'GENE',
+             all.x = TRUE) %>%
+  filter(is.na(ensembl_gene_id)) 
+NAs$GENE <- 'NA'
+
+cleaned_tf_legacy <- rbind(cleaned_tf_legacy,NAs)
+
+#counting # of unique tf_legacy
+count(cleaned_tf_legacy[unique(cleaned_tf_legacy$NAME),])
+#cleaned legacy tf dataset 304/324 unique gene-sets were found to be tfs
+legacy_tfs <- cleaned_tf_legacy %>%
+  group_by(GWAS_TYPE,FEATURE) %>%
+  distinct(NAME,.keep_all = TRUE) %>%
+  mutate(rank = dense_rank(desc(NES))) %>%
+  ungroup() %>%
+  dplyr::rename( MsigdB_NAME = NAME)  
+
+#Supplementary Table 6
+head(legacy_tfs)
+```
+
+#UpsetPlot
+```{r, eval = TRUE}
+
+histotype = c('HGSOC','LGSOC','CCOC','NMOC','MOC','EnOC')
+for(i in histotype) {
+  #chromMAGMA for each histotype
+  assign(paste0('min_P_chromMAGMA_sig_legacy_',i),
+         legacy_tfs %>%
+           filter(FEATURE == 'chromMAGMA') %>%
+           filter(!GENE == 'NA') %>%
+           filter(GWAS_TYPE == paste(i)) %>%
+  filter(NOM.p.val < 0.05) %>%
+  filter(FDR.q.val < 0.25)%>%
+  dplyr::group_by(FEATURE, GWAS_TYPE, GENE) %>%
+  dplyr::mutate(min_Pvalue = min(NOM.p.val)) %>% 
+  filter(NOM.p.val == min_Pvalue) 
+  )
+}
+
+
+histotype_list <- list(
+  CCOC = min_P_chromMAGMA_sig_legacy_CCOC$GENE,
+  EnOC = min_P_chromMAGMA_sig_legacy_EnOC$GENE,
+  HGSOC = min_P_chromMAGMA_sig_legacy_HGSOC$GENE,
+  LGSOC = min_P_chromMAGMA_sig_legacy_LGSOC$GENE,
+  MOC = min_P_chromMAGMA_sig_legacy_MOC$GENE
+)
+
+
+library(UpSetR)
+upset(fromList(histotype_list),
+      nsets = length(histotype_list),
+      #$empty.intersections = 'on',
+      order.by ='freq')
+```
+
+#histotype specific dotplot based on upset  Figure 5A
+```{r,eval = TRUE}
+fromList <- function (input) {
+  # Same as original fromList()...
+  elements <- unique(unlist(input))
+  data <- unlist(lapply(input, function(x) {
+      x <- as.vector(match(elements, x))
+      }))
+  data[is.na(data)] <- as.integer(0)
+  data[data != 0] <- as.integer(1)
+  data <- data.frame(matrix(data, ncol = length(input), byrow = F))
+  data <- data[which(rowSums(data) != 0), ]
+  names(data) <- names(input)
+  # ... Except now it conserves your original value names!
+  row.names(data) <- elements
+  return(data)
+  }
+
+# Binary table with colnames:
+annotated_TFs<- fromList(histotype_list)
+annotated_TFs$GENE <- rownames(annotated_TFs) 
+annotated_TFs$binary <-  paste(annotated_TFs$CCOC,
+                            annotated_TFs$EnOC,
+                            annotated_TFs$HGSOC,
+                            annotated_TFs$LGSOC,
+                            annotated_TFs$MOC) 
+annotated_TFs$anno <- ifelse(annotated_TFs$binary %in% "1 0 0 0 0",'CCOC Specific',
+                             ifelse(annotated_TFs$binary %in% "0 1 0 0 0",'EnOC Specific',
+                                    ifelse(annotated_TFs$binary %in% "0 0 1 0 0",'HGSOC Specific',
+                                                  ifelse(annotated_TFs$binary %in% "0 0 0 1 0",'LGSOC Specific',
+                                                         ifelse(annotated_TFs$binary %in% "0 0 0 0 1",'MOC Specific',
+                                                                ifelse(annotated_TFs$binary %in% "1 1 1 1 1",'All Common','NA'))))))
+annotated_TFs <- annotated_TFs %>% filter(!anno == 'NA')
+annotated_TFs<- annotated_TFs[order(annotated_TFs$anno),]
+
+
+legacy_tfs %>%
+  filter(FEATURE == 'chromMAGMA') %>%
+  filter(!GENE == 'NA') %>%
+  group_by(GWAS_TYPE) %>% 
+  filter(GENE %in% annotated_TFs$GENE) %>%
+  mutate(NOM.p.val = replace(NOM.p.val, NOM.p.val == 0, 0.001)) %>% # Replacing values; GSEA's P-value is limited to <0.001
+  mutate(NEG_LOG10_Pvalue = -log10(NOM.p.val)) %>%
+  filter(!TIDY_GWAS_TYPE == 'Non-mucinous')  %>%
+  dplyr::group_by(FEATURE, GWAS_TYPE, GENE) %>%
+  dplyr::mutate(min_Pvalue = min(NOM.p.val)) %>% 
+  filter(NOM.p.val == min_Pvalue) %>%
+  {ggplot(.,aes(factor(GWAS_TYPE),GENE)) + 
+  geom_point(aes(colour=NEG_LOG10_Pvalue,size= FDR.q.val)) + 
+  scale_colour_gradient(low="blue", high="red", n.breaks = 4) + 
+  scale_size_continuous(limits = c(0, 1.5), range = c(7,0)) + 
+  theme_bw() +
+  theme(axis.text=element_text(size=7), 
+        axis.title=element_text(size=7,face="bold")) + 
+  theme(axis.text.x = element_text(size = 7, angle = 90),
+        axis.title.x=element_blank(),
+        legend.title = element_blank()) +
+  scale_y_discrete(limits = annotated_TFs$GENE) }
+  
+```
+
+
+
+#histotype specific dotplot
+```{r, include = FALSE}
+
+histotype = c('HGSOC','LGSOC','CCOC','NMOC','MOC','EnOC')
+for(i in histotype) {
+  #chromMAGMA for each histotype
+  assign(paste0('chromMAGMA_sig_legacy_',i),
+         legacy_tfs %>%
+           filter(FEATURE == 'chromMAGMA') %>%
+           filter(!GENE == 'NA') %>%
+           filter(GWAS_TYPE == paste(i)) %>%
+  filter(NOM.p.val < 0.05) %>%
+  filter(FDR.q.val < 0.25) %>%
+  dplyr::group_by(FEATURE, GWAS_TYPE, GENE) %>%
+  dplyr::mutate(min_Pvalue = min(NOM.p.val)) %>% 
+  filter(NOM.p.val == min_Pvalue)
+  )
+}
+
+duplicated_sig <- legacy_tfs %>%
+  filter(FEATURE == 'chromMAGMA') %>%
+  filter(!GENE == 'NA') %>%
+  group_by(GWAS_TYPE) %>%
+  filter(NOM.p.val < 0.05) %>%
+  filter(FDR.q.val < 0.25) %>%
+  filter(!TIDY_GWAS_TYPE == 'Non-mucinous')
+duplicated_sig <- duplicated_sig[duplicated(duplicated_sig$GENE),]
+
+c <- chromMAGMA_sig_legacy_CCOC[!chromMAGMA_sig_legacy_CCOC$GENE %in% duplicated_sig$GENE,]
+e <- chromMAGMA_sig_legacy_EnOC[!chromMAGMA_sig_legacy_EnOC$GENE %in% duplicated_sig$GENE,]
+h <- chromMAGMA_sig_legacy_HGSOC[!chromMAGMA_sig_legacy_HGSOC$GENE %in% duplicated_sig$GENE,]
+l <- chromMAGMA_sig_legacy_LGSOC[!chromMAGMA_sig_legacy_LGSOC$GENE %in% duplicated_sig$GENE,]
+m <- chromMAGMA_sig_legacy_MOC[!chromMAGMA_sig_legacy_MOC$GENE %in% duplicated_sig$GENE,]
+df <- rbind(c,e,h,l,m)
+
+test <- legacy_tfs %>%
+  filter(FEATURE == 'chromMAGMA') %>%
+  filter(!GENE == 'NA') %>%
+  group_by(GWAS_TYPE) %>% 
+  mutate(anno  = case_when(GENE %in% c$GENE ~ "CCOC specific",
+                           GENE %in% e$GENE ~ "EnOC specific",
+                           GENE %in% h$GENE ~ "HGSOC specific",
+                           GENE %in% l$GENE ~ "LGSOC specific",
+                           GENE %in% m$GENE ~ "MOC specific")) %>%
+  filter(!anno == 'NA') %>%
+  mutate(NOM.p.val = replace(NOM.p.val, NOM.p.val == 0, 0.001)) %>% # Replacing values; GSEA's P-value is limited to <0.001
+  mutate(NEG_LOG10_Pvalue = -log10(NOM.p.val)) %>%
+  filter(!TIDY_GWAS_TYPE == 'Non-mucinous')  %>%
+  {ggplot(.,aes(factor(GWAS_TYPE),GENE)) + 
+  geom_point(aes(colour=NEG_LOG10_Pvalue,size= FDR.q.val)) + 
+  scale_colour_gradient(low="blue", high="red", n.breaks = 4) + 
+  scale_size_continuous(limits = c(0, 1.5), range = c(8,0)) + 
+  theme_bw() +
+  theme(axis.text=element_text(size=7), 
+        axis.title=element_text(size=7,face="bold")) + 
+  theme(axis.text.x = element_text(size = 7, angle = 90),
+        axis.title.x=element_blank()) +
+  scale_y_discrete(limits = df$GENE) }
+
+```
+
+```{r, include = FALSE}
+##re-calculating FDR & adding to legacy_tfs
+#FDRqvalue <- qvalue(legacy_tfs$NOM.p.val, pfdr = TRUE)
+#
+#legacy_tfs_qvalue <- legacy_tfs %>%
+#  mutate(FDRqvalue_clean = FDRqvalue$qvalues) %>%
+#  dplyr::select(c(ensembl_gene_id,
+#                  MsigdB_NAME,
+#                  GENE,
+#                  GWAS_TYPE,
+#                  FEATURE,
+#                  GENESET,
+#                  SIZE,
+#                  ES,
+#                  NES,
+#                  NOM.p.val,
+#                  FDRqvalue_clean,
+#                  RANK.AT.MAX,
+#                  LEADING.EDGE))
+#legacy_tfs_qvalue[is.na(legacy_tfs_qvalue)] <- 0
+  
+
+#write.table(x = legacy_tfs, file = '~/Lawrensonlab/Projects/chromMAGMA/Data_RDS/legacy_tf_results.6.15.21.txt', #append = F, quote = T, sep = '\t', row.names = F, col.names = T)
+### Vectors of each significant FEATURExGWAS
+#histotype = c('HGSOC','LGSOC','CCOC','NMOC','MOC','EnOC')
+#for(i in histotype) {
+#  #MAGMA for each histotype
+#  assign(paste0('MAGMA_sig_',i),
+#         legacy_tfs %>%
+#           filter(FEATURE == 'MAGMA') %>%
+#           filter(GWAS_TYPE == paste(i)) %>%
+#           filter(!GENE == 'NA') %>%
+#           group_by(FEATURE, GWAS_TYPE) %>%
+#           filter(NOM.p.val < 0.05) %>%
+#           filter(FDR.q.val < 0.25)
+#  )
+#  
+#  #chromMAGMA for each histotype
+#  assign(paste0('chromMAGMA_sig_',i),
+#         legacy_tfs %>%
+#           filter(FEATURE == 'chromMAGMA') %>%
+#           filter(GWAS_TYPE == paste(i)) %>%
+#           filter(!GENE == 'NA') %>% 
+#           group_by(FEATURE, GWAS_TYPE) %>%
+#           filter(NOM.p.val < 0.05) %>%
+#           filter(FDR.q.val < 0.25)
+#         )
+#}
+#
+#sig_chromMAGMA_Msigdb <- legacy_tfs %>%
+#    filter(NOM.p.val < 0.05) %>%
+#    filter(FDR.q.val < 0.25) %>%
+#  filter(!GENE == 'NA') %>%
+#  distinct(MsigdB_NAME, .keep_all = TRUE) %>%
+#  filter(FEATURE == 'chromMAGMA') 
+#
+#sig_chromMAGMA_GENE <- legacy_tfs %>%
+#    filter(NOM.p.val < 0.05) %>%
+#    filter(FDR.q.val < 0.25) %>%
+#  filter(!GENE == 'NA') %>%
+#  distinct(GENE, .keep_all = TRUE) %>%
+#  filter(FEATURE == 'chromMAGMA') 
+#
+#
+#sig_MAGMA <- legacy_tfs  %>%
+#    filter(NOM.p.val < 0.05) %>%
+#    filter(FDR.q.val < 0.25) %>%
+#  filter(!GENE == 'NA') %>%
+#  distinct(MsigdB_NAME, .keep_all = TRUE)%>%
+#  filter(FEATURE == 'MAGMA')
+#
+#unique_sig <- sig_chromMAGMA[!sig_chromMAGMA$MsigdB_NAME %in% sig_MAGMA$MsigdB_NAME,]
+#unique_sig <- chromMAGMA_sig_HGSOC[!chromMAGMA_sig_HGSOC$GENE %in% MAGMA_sig_HGSOC$GENE,]
+#
+#CCOC_common <- chromMAGMA_sig_CCOC[chromMAGMA_sig_CCOC$MsigdB_NAME %in% MAGMA_sig_CCOC$MsigdB_NAME,]
+#EnOC_common <- chromMAGMA_sig_EnOC[chromMAGMA_sig_EnOC$MsigdB_NAME %in% MAGMA_sig_EnOC$MsigdB_NAME,]
+#HGSOC_common <- chromMAGMA_sig_HGSOC[chromMAGMA_sig_HGSOC$MsigdB_NAME %in% MAGMA_sig_HGSOC$MsigdB_NAME,]
+#LGSOC_common <- chromMAGMA_sig_LGSOC[chromMAGMA_sig_LGSOC$MsigdB_NAME %in% MAGMA_sig_LGSOC$MsigdB_NAME,]
+#MOC_common <- chromMAGMA_sig_MOC[chromMAGMA_sig_MOC$MsigdB_NAME %in% MAGMA_sig_MOC$MsigdB_NAME,]
+#NMOC_common <- chromMAGMA_sig_NMOC[chromMAGMA_sig_NMOC$MsigdB_NAME %in% MAGMA_sig_NMOC$MsigdB_NAME,] 
+```
+
+
+
+
+
+

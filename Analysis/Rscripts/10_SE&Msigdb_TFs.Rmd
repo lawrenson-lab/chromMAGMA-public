@@ -1,0 +1,87 @@
+---
+title: "10 Getting List of Nexus Transccription Factors"
+output: html_document
+---
+*Robbin Nameki, Anamay Shetty et al.*
+*August 2021*
+# Introduction
+This section introduces the process of identifying Nexus Transcription Factors. Used for the generation of Supplementary Table 7. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Libraries
+```{r, message = FALSE, warning = FALSE}
+library(tidyverse)
+```
+
+## Sourcecode
+```{r,eval = TRUE}
+source('Rscripts/Utils.R')
+```
+## Data
+This analysis compares  MsigDB BROAD GSEA results x the transcription factors on the leading edge of the super-enhancer associated GSEA analysis.
+```{r, eval = TRUE}
+legacy_tf <- getting_legacy_tf_MsigDBGSEA()
+
+histotype = c('HGSOC','LGSOC','CCOC','NMOC','MOC','EnOC')
+for(i in histotype) {
+  #MAGMA for each histotype
+  assign(paste0('MAGMA_sig_',i),
+         legacy_tf %>%
+           filter(FEATURE == 'MAGMA') %>%
+           filter(GWAS_TYPE == paste(i)) %>%
+           filter(!is.na(GENE)) %>%
+           group_by(FEATURE, GWAS_TYPE) %>%
+           filter(NOM.p.val < 0.05) %>%
+           filter(FDR.q.val < 0.25)
+         ) 
+  
+  #chromMAGMA for each histotype
+  assign(paste0('chromMAGMA_sig_',i),
+         legacy_tf %>%
+           filter(FEATURE == 'chromMAGMA') %>%
+           filter(GWAS_TYPE == paste(i)) %>%
+           filter(!is.na(GENE)) %>%
+           group_by(FEATURE, GWAS_TYPE) %>%
+           filter(NOM.p.val < 0.05) %>%
+           filter(FDR.q.val < 0.25)
+         )
+}
+
+LE_list <- getting_LE_list()
+LE_list_nested <- LE_list %>%
+  dplyr::rename(GENE = gene_id) %>%
+  split(f = as.factor(.$GWAS_TYPE)) 
+```
+
+##List
+of Nexus TFs (Supplementary Table 7)
+```{r,eval= TRUE}
+#CCOC
+chromMAGMA_tf_CCOC <- chromMAGMA_sig_CCOC[chromMAGMA_sig_CCOC$GENE %in% LE_list_nested$clearcell$GENE,]
+chromMAGMA_tf_EnOC <- chromMAGMA_sig_EnOC[chromMAGMA_sig_EnOC$GENE %in% LE_list_nested$endometrioid$GENE,]
+chromMAGMA_tf_HGSOC <- chromMAGMA_sig_HGSOC[chromMAGMA_sig_HGSOC$GENE %in% LE_list_nested$serous_hg_extra$GENE,]
+chromMAGMA_tf_MOC <- chromMAGMA_sig_MOC[chromMAGMA_sig_MOC$GENE %in% LE_list_nested$mucinous_all$GENE,]
+
+
+LE_list2 <- LE_list %>%
+  filter(!GWAS_TYPE == 'mucinous_all') %>%
+  dplyr::rename(GENE = gene_id)
+chromMAGMA_tf_NMOC <- chromMAGMA_sig_NMOC[chromMAGMA_sig_NMOC$GENE %in% LE_list2$GENE,]
+
+tf_list_final <- rbind(chromMAGMA_tf_CCOC,
+      chromMAGMA_tf_EnOC,
+      chromMAGMA_tf_HGSOC,
+      chromMAGMA_tf_MOC,
+      chromMAGMA_tf_NMOC) %>%
+  ungroup() %>%
+  dplyr::select(MsigdB_NAME,
+                GENE,
+                GWAS_TYPE)
+
+head(tf_list_final)
+
+#write.table(x = tf_list_final, file = 'Data/nexus_tfs.6.15.21.txt', append = F, quote = T, sep = '\t', row.names = F, col.names = T)
+```
+

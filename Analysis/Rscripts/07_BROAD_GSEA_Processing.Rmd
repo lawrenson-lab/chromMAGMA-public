@@ -1,0 +1,67 @@
+---
+title: "07.5 MsigDB & TF Super-Enhancer BROAD Gene-set Enrichment Analysis"
+author: "Anamay Shetty"
+date: "6/24/2021"
+output: html_document
+---
+
+*Robbin Nameki, Anamay Shetty et al.*
+*August 2021*
+
+# Introduction
+This document explains how the MsigDB & Super-Enhancer Gene-set enrichment analysis was done.
+
+The Broad Gene-set enrichment analysis takes in two inputs:
+
+1. The ranked list of all genes
+
+2. The list of all genesets to be tested
+
+and produces a series of files, two of which are a flat file containing enrichment information for each geneset. 
+
+We have created a helper script to run Broad GSEA which takes in the following inputs:
+
+1. The subtype of ovarian cancer (which alters which SNP enrichments to use)
+
+2. The type of analysis (cMAGMA or chromMAGMA)
+
+3. The geneset name (.gmt file)
+
+```{r, message = FALSE, warning = FALSE}
+library(purrr)
+
+genesets <- c("robbin_superenancer.gmt", "157_pax8_pathway_BJC_2017.gmt", "c3.tft.gtrd.v7.4.symbols.gmt", "c3.tft.tft_legacy.v7.4.symbols.gmt")
+
+type <- c("cMAGMA", "chromMAGMA")
+
+gwas <- c("HGSOC", "LGSOC", "MOC", "NMOC", "EnOC")
+
+df <- purrr::cross_df(list(gwas = gwas, type = type, genesets = genesets))
+
+# This contains a vector of commands to pass into the script
+df$commands <- paste(df$gwas, df$type, df$genesets)
+
+# This runs each command to the helper script which runs Broad GSEA
+lapply(df$commands, function(x) system(paste("Processing/gsea_execution_script.sh &", x)))
+
+```
+
+We can then read in the GSEA results and create a single data frame containing the results
+
+```{r}
+gsea_results <- tibble(x = list.files("Processing/Data/gsea_output_files", pattern = "GseaPreranked", full.names = TRUE)) %>%
+  separate(x, into = c(rep(NA, 7), "y"), sep = "/", remove = FALSE) %>%
+  separate(y, into = c("gwas_type", "category", "geneset", NA, NA, NA), sep = "\\.") %>%
+  #count(gwas_type, category, geneset) %>%
+  mutate(df = map(x, read_in_gsea_broad_results)) %>%
+  select(-x) %>%
+  group_by(gwas_type, category, geneset) %>%
+  mutate(df = map(df, mutate, GWAS_TYPE = gwas_type, FEATURE = category, GENESET = geneset)) %>%
+  .[["df"]] %>%
+  bind_rows %>%
+  left_join(gwas_name_conversion_table, by = "GWAS_TYPE") %>%
+  left_join(feature_name_conversion_list, by = "FEATURE")
+
+#write_tsv(gsea_results, "data_v1.08/gsea_results_all_chrs.txt")
+```
+

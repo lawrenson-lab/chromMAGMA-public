@@ -1,0 +1,330 @@
+---
+title: "7_Pathway_GSEA_Graphs_MAGMA"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## libraries
+```{r, eval = TRUE}
+library(tidyverse)
+library(clusterProfiler)
+library(enrichplot)
+library(ggplot2)
+library(DESeq2)
+library(UpSetR)
+```
+## Getting entrezGeneIDs for data
+```{r, eval = TRUE}
+#Getting EntrezGeneIDs
+ensembl <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl", GRCh = 37)
+bm <- getBM(attributes=c('ensembl_gene_id', 'external_gene_name', 'entrezgene_id'),
+            filters = 'chromosome_name',
+            values = c(1:22,'X'),
+            mart = ensembl)
+bm.unique_external_gene_name <- bm[!duplicated(bm[,'external_gene_name']),]
+
+#Assigning EntrezGeneIDs to analysis
+Gene_Level_MAGMA <- read.table('/media/Data01/Robbin/GWAS_GSEA/data_v1.08_Expression_Weighted_Analysis/Tables/Gene_Level/Gene_Level.4.9.21.txt', sep = '\t', header = TRUE) %>%
+  filter(FEATURE == 'MAGMA')
+gene_level.ensembl <- merge(Gene_Level_MAGMA, bm.unique_external_gene_name,by = 'external_gene_name')
+
+
+gene_level.ensembl.entrez <- gene_level.ensembl[!gene_level.ensembl$entrezgene_id =='',]
+
+#Taking out HLA genes from dataframe
+HLA_genes <- read.table('/media/Data01/Robbin/GWAS_GSEA/data_v1.08/Tables/hla.alleles.org.genes.index.html.txt', sep = '\t', header = TRUE)
+gene_level.ensembl.entrez.noHLA <- gene_level.ensembl.entrez[!(gene_level.ensembl.entrez$external_gene_name %in% HLA_genes$hgnc_symbol),]
+```
+
+## Getting Gene Lists
+```{r, eval =TRUE}
+histotype = c('HGSOC','LGSOC','CCOC','NMOC','MOC','EnOC')
+for(i in histotype) {
+#MAGMA
+  assign(paste0('MAGMA_',i),
+        gene_level.ensembl.entrez.noHLA %>%
+           filter(FEATURE == 'MAGMA') %>%
+           filter(GWAS_TYPE == paste(i))%>%
+    dplyr::select(entrezgene_id,NEG_LOG10P,external_gene_name) %>%
+      arrange(desc(NEG_LOG10P))
+        )
+}
+
+#MAGMA_List
+MAGMA.geneList.CCOC <- MAGMA_CCOC[,2]
+names(MAGMA.geneList.CCOC) = as.character(MAGMA_CCOC[,1])
+MAGMA.geneList.CCOC = sort(MAGMA.geneList.CCOC, decreasing = TRUE)
+
+MAGMA.geneList.EnOC <- MAGMA_EnOC[,2]
+names(MAGMA.geneList.EnOC) = as.character(MAGMA_EnOC[,1])
+MAGMA.geneList.EnOC = sort(MAGMA.geneList.EnOC, decreasing = TRUE)
+
+MAGMA.geneList.HGSOC <- MAGMA_HGSOC[,2]
+names(MAGMA.geneList.HGSOC) = as.character(MAGMA_HGSOC[,1])
+MAGMA.geneList.HGSOC = sort(MAGMA.geneList.HGSOC, decreasing = TRUE)
+
+MAGMA.geneList.LGSOC <- MAGMA_LGSOC[,2]
+names(MAGMA.geneList.LGSOC) = as.character(MAGMA_LGSOC[,1])
+MAGMA.geneList.LGSOC = sort(MAGMA.geneList.LGSOC, decreasing = TRUE)
+
+MAGMA.geneList.MOC <- MAGMA_MOC[,2]
+names(MAGMA.geneList.MOC) = as.character(MAGMA_MOC[,1])
+MAGMA.geneList.MOC = sort(MAGMA.geneList.MOC, decreasing = TRUE)
+
+MAGMA.geneList.NMOC <- MAGMA_NMOC[,2]
+names(MAGMA.geneList.NMOC) = as.character(MAGMA_NMOC[,1])
+MAGMA.geneList.NMOC = sort(MAGMA.geneList.NMOC, decreasing = TRUE)
+
+```
+## GSEgo_MAGMA
+```{r, eval = TRUE}
+organism = 'org.Hs.eg.db'
+#BiocManager::install(organism, character.only = TRUE)
+library(organism, character.only = TRUE)
+organism.2 = org.Hs.eg.db
+
+MAGMA.CCOC.gse <- gseGO(geneList= MAGMA.geneList.CCOC, 
+             ont ="ALL", 
+             keyType = "ENTREZID", 
+             nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = organism.2, 
+             pAdjustMethod = "BH")
+
+MAGMA.EnOC.gse <- gseGO(geneList= MAGMA.geneList.EnOC, 
+             ont ="ALL", 
+             keyType = "ENTREZID", 
+             nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = organism.2, 
+             pAdjustMethod = "BH")
+
+MAGMA.HGSOC.gse <- gseGO(geneList= MAGMA.geneList.HGSOC, 
+             ont ="ALL", 
+             keyType = "ENTREZID", 
+             nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = organism.2, 
+             pAdjustMethod = "BH")
+
+MAGMA.LGSOC.gse <- gseGO(geneList= MAGMA.geneList.LGSOC, 
+             ont ="ALL", 
+             keyType = "ENTREZID", 
+             nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = organism.2, 
+             pAdjustMethod = "BH")
+
+MAGMA.MOC.gse <- gseGO(geneList= MAGMA.geneList.MOC, 
+             ont ="ALL", 
+             keyType = "ENTREZID", 
+             nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = organism.2, 
+             pAdjustMethod = "BH")
+
+MAGMA.NMOC.gse <- gseGO(geneList= MAGMA.geneList.NMOC, 
+             ont ="ALL", 
+             keyType = "ENTREZID", 
+             nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = organism.2, 
+             pAdjustMethod = "BH")
+
+##output
+saveRDS(MAGMA.CCOC.gse, '/media/Data01/Robbin/GWAS_GSEA/data_v1.08_Expression_Weighted_Analysis/Tables/GSEgo_MAGMA/MAGMA.CCOC.gse.RDS')
+saveRDS(MAGMA.EnOC.gse, '/media/Data01/Robbin/GWAS_GSEA/data_v1.08_Expression_Weighted_Analysis/Tables/GSEgo_MAGMA/MAGMA.EnOC.gse.RDS')
+saveRDS(MAGMA.HGSOC.gse, '/media/Data01/Robbin/GWAS_GSEA/data_v1.08_Expression_Weighted_Analysis/Tables/GSEgo_MAGMA/MAGMA.HGSOC.gse.RDS')
+saveRDS(MAGMA.LGSOC.gse, '/media/Data01/Robbin/GWAS_GSEA/data_v1.08_Expression_Weighted_Analysis/Tables/GSEgo_MAGMA/MAGMA.LGSOC.gse.RDS')
+saveRDS(MAGMA.MOC.gse, '/media/Data01/Robbin/GWAS_GSEA/data_v1.08_Expression_Weighted_Analysis/Tables/GSEgo_MAGMA/MAGMA.MOC.gse.RDS')
+saveRDS(MAGMA.NMOC.gse, '/media/Data01/Robbin/GWAS_GSEA/data_v1.08_Expression_Weighted_Analysis/Tables/GSEgo_MAGMA/MAGMA.NMOC.gse.RDS')
+```
+## Dotplots
+```{r,eval = TRUE}
+###Dotplot
+pdf(file = '/media/Data01/Robbin/GWAS_GSEA/data_v1.08_Expression_Weighted_Analysis/Figures/MAGMA.CCOC.GSEgo_MAGMA.pdf', 
+    onefile = T, 
+    useDingbats = F, 
+    width = 11, 
+    height = 4)
+dotplot(MAGMA.CCOC.gse, showCategory = 10, title = "Enriched Pathways" , split=".sign") + facet_grid(.~.sign)
+dev.off()
+
+pdf(file = '/media/Data01/Robbin/GWAS_GSEA/data_v1.08_Expression_Weighted_Analysis/Figures/MAGMA.EnOC.GSEgo_MAGMA.pdf', 
+    onefile = T, 
+    useDingbats = F,
+    width = 11, 
+    height = 4)
+dotplot(MAGMA.EnOC.gse, showCategory = 10, title = "Enriched Pathways" , split=".sign") + facet_grid(.~.sign)
+dev.off()
+
+pdf(file = '/media/Data01/Robbin/GWAS_GSEA/data_v1.08_Expression_Weighted_Analysis/Figures/MAGMA.HGSOC.GSEgo_MAGMA.pdf', 
+    onefile = T, 
+    useDingbats = F, 
+    width = 11, 
+    height = 4)
+dotplot(MAGMA.HGSOC.gse, showCategory = 10, title = "Enriched Pathways" , split=".sign") + facet_grid(.~.sign)
+dev.off()
+
+pdf(file = '/media/Data01/Robbin/GWAS_GSEA/data_v1.08_Expression_Weighted_Analysis/Figures/MAGMA.LGSOC.GSEgo_MAGMA.pdf', 
+    onefile = T, 
+    useDingbats = F, 
+    width = 11, 
+    height = 4)
+dotplot(MAGMA.LGSOC.gse, showCategory = 10, title = "Enriched Pathways" , split=".sign") + facet_grid(.~.sign)
+dev.off()
+
+pdf(file = '/media/Data01/Robbin/GWAS_GSEA/data_v1.08_Expression_Weighted_Analysis/Figures/MAGMA.MOC.GSEgo_MAGMA.pdf', 
+    onefile = T, 
+    useDingbats = F, 
+    width = 11, 
+    height = 4)
+dotplot(MAGMA.MOC.gse, showCategory = 10, title = "Enriched Pathways" , split=".sign") + facet_grid(.~.sign)
+dev.off()
+
+pdf(file = '/media/Data01/Robbin/GWAS_GSEA/data_v1.08_Expression_Weighted_Analysis/Figures/MAGMA.NMOC.GSEgo_MAGMA.pdf', 
+    onefile = T, 
+    useDingbats = F, 
+    width = 11,
+    height = 4)
+dotplot(MAGMA.NMOC.gse, showCategory = 10, title = "Enriched Pathways" , split=".sign") + facet_grid(.~.sign)
+dev.off()
+```
+## Descriptive Stats Output
+```{r,eval=TRUE}
+file_location <- "/media/Data01/Robbin/GWAS_GSEA/data_v1.08_Expression_Weighted_Analysis/Tables/GSEgo_MAGMA/"
+
+format_output_df <- function(file_location) {
+  as_tibble(read_rds(file_location)@result) %>%
+    separate_rows(core_enrichment, sep = "/") %>%
+    select("ENTREZEGENE_ID" = core_enrichment, Description, ID, setSize, NES, p.adjust, ONTOLOGY)
+}
+
+tibble(histotype = str_remove(list.files(file_location), ".gse.RDS"), file_location = list.files(file_location, full.names = TRUE)) %>%
+  group_by(histotype) %>%
+  mutate(results = map(file_location, format_output_df)) %>%
+  select(-file_location) %>%
+  unnest(results) %>%
+  write_tsv("/media/Data01/Robbin/GWAS_GSEA/data_v1.08_Expression_Weighted_Analysis/Tables/GSEgo_MAGMA/cleaned_pathway_gsea_output.4.14.21.txt")
+```
+## Descriptive Statistics of MAGMA Pathway Analysis
+```{r,eval = TRUE}
+df <- read.table("/media/Data01/Robbin/GWAS_GSEA/data_v1.08_Expression_Weighted_Analysis/Tables/GSEgo_MAGMA/cleaned_pathway_gsea_output.4.14.21.txt", sep = '\t', header = TRUE, quote = "")
+df <- df %>%
+  dplyr::rename(entrezgene_id = ENTREZEGENE_ID) %>%
+  filter(NES > 0)
+df.symbol <- merge(df,bm.unique_external_gene_name,by = 'entrezgene_id', all.x = TRUE)
+
+df.symbol.CCOC <- df.symbol %>%
+  filter(histotype == 'MAGMA.CCOC') %>%
+  distinct(Description, .keep_all = TRUE)
+
+df.symbol.EnOC <- df.symbol %>%
+  filter(histotype == 'MAGMA.EnOC') %>%
+  distinct(Description, .keep_all = TRUE)
+
+df.symbol.HGSOC <- df.symbol %>%
+  filter(histotype == 'MAGMA.HGSOC') %>%
+  distinct(Description, .keep_all = TRUE)
+
+df.symbol.LGSOC <- df.symbol %>%
+  filter(histotype == 'MAGMA.LGSOC') %>%
+  distinct(Description, .keep_all = TRUE)
+
+df.symbol.MOC <- df.symbol %>%
+  filter(histotype == 'MAGMA.MOC') %>%
+  distinct(Description, .keep_all = TRUE)
+
+df.symbol.NMOC <- df.symbol %>%
+  filter(histotype == 'MAGMA.NMOC') %>%
+  distinct(Description, .keep_all = TRUE)
+
+df.symbol.list <- c('df.symbol.CCOC','df.symbol.EnOC','df.symbol.HGSOC','df.symbol.LGSOC','df.symbol.MOC','df.symbol.NMOC')
+
+#Upset
+df.upset <- list(
+  CCOC = df.symbol.CCOC$Description,
+  EnOC = df.symbol.EnOC$Description,
+  HGSOC = df.symbol.HGSOC$Description,
+  LGSOC = df.symbol.LGSOC$Description,
+  MOC = df.symbol.MOC$Description,
+  NMOC = df.symbol.NMOC$Description
+)
+
+plot <- upset(fromList(df.upset), nsets = length(df.upset), 
+              empty.intersections = "on", 
+              order.by = "freq", 
+              point.size = 3.5, 
+              text.scale = 1.5,
+              line.size = 2)
+#finding_Common
+df.inner <- inner_join(df.symbol.CCOC, df.symbol.EnOC, by='Description') %>%
+  inner_join(.,df.symbol.HGSOC, by='Description') %>%
+  inner_join(.,df.symbol.LGSOC, by='Description')%>%
+  inner_join(.,df.symbol.MOC, by='Description')%>%
+  inner_join(.,df.symbol.NMOC, by='Description')
+length(unique(df.inner$Description))
+```
+## Getting Data on what pathways are common 
+```{r,eval=TRUE}
+## Finding Genes involved in Splicing
+df.acrosshistotypes <- df.symbol[df.symbol$Description %in% df.inner$Description,] 
+##All Splice
+splicing <- df.acrosshistotypes %>%
+filter(str_detect(Description,'splic'))
+splicing <- splicing %>%
+  distinct(Description, .keep_all = TRUE) 
+
+splicing.genes <- df.acrosshistotypes %>%
+  filter(str_detect(Description,'splic')) %>%
+  distinct(external_gene_name, .keep_all = TRUE) %>%
+  dplyr::select(ensembl_gene_id,external_gene_name,ID,Description)
+splicing.genes$gene_biotype <- 'splicing.genes'
+
+## all transcription
+transcription <- df.acrosshistotypes %>%
+filter(str_detect(Description,'transcription'))
+transcription <- transcription %>%
+  distinct(Description, .keep_all = TRUE) 
+
+transcription.genes <- df.acrosshistotypes %>%
+  filter(str_detect(Description,'transcription')) %>%
+  distinct(external_gene_name, .keep_all = TRUE) %>%
+  dplyr::select(ensembl_gene_id,external_gene_name,ID,Description)
+transcription.genes$gene_biotype <- 'transcription.genes'
+
+splicing_transcription_pathway_genes_common_all_histotypes <- rbind(splicing.genes,transcription.genes)
+
+## chromatin?
+chromatin <- df.acrosshistotypes %>%
+filter(str_detect(Description,'chromatin'))
+chromatin <- chromatin %>%
+  distinct(Description, .keep_all = TRUE) 
+
+chromatin.genes <- df.acrosshistotypes %>%
+  filter(str_detect(Description,'chromatin')) %>%
+  distinct(external_gene_name, .keep_all = TRUE) %>%
+  dplyr::select(ensembl_gene_id,external_gene_name,ID,Description)
+chromatin.genes$gene_biotype <- 'chromatin.genes'
+
+

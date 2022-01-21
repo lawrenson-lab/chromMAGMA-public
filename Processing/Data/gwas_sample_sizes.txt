@@ -1,0 +1,13 @@
+serous_hg_extra	121312
+ser_lg_lmp	103765
+endometrioid	107853
+mucinous_all	108197
+all_non_mucinous	129118
+clearcell	106938
+
+
+
+
+
+
+
