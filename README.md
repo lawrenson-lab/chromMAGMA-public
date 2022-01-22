@@ -1,4 +1,4 @@
-# chromMAGMA: epigenome-centric interrogation of risk variant interactions with chromatin landscapes
+# chromMAGMA: regulatory element-centric interrogation of risk variants 
 
 Robbin Nameki, Anamay Shetty, Eileen Dareng, Jonathan Tyrer, the Ovarian Cancer Research Consortium, Paul Pharoah, Rosario I. Corona, Siddhartha Kar, Kate Lawrenson
 
